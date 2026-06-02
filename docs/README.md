@@ -5,3 +5,4 @@ PROJECT_SPEC §"Documentation drift is a bug"):
 
 - [PROJECT_SPEC.md](../PROJECT_SPEC.md)
 - [ROADMAP.md](../ROADMAP.md)
+- [DEPLOY.md](DEPLOY.md) — web/Android/iOS deployment paths & blockers
