@@ -13,3 +13,13 @@ RETURNS uuid
 LANGUAGE sql STABLE AS $$
   SELECT (NULLIF(current_setting('request.jwt.claims', true), '')::json ->> 'sub')::uuid
 $$;
+
+-- Supabase ships these roles; create them here so migrations that GRANT/REVOKE
+-- against them (e.g. the auth hook) apply against bare-Postgres CI.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN CREATE ROLE supabase_auth_admin NOLOGIN; END IF;
+END $$;

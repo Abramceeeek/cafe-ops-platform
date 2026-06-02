@@ -121,6 +121,8 @@ jobs:
             echo "--- applying $f"
             psql -v ON_ERROR_STOP=1 -f "$f"
           done
+      - name: Apply + verify catalog seed
+        run: psql -v ON_ERROR_STOP=1 -f supabase/seed/catalog_seed.sql
 
   rls-tests:
     name: rls-tests
