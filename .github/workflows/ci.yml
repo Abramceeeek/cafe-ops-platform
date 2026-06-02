@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main, staging, dev]
+  pull_request:
+    branches: [main, staging, dev]
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-apps:
+    name: mobile-apps
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [shop_app, hub_app]
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  admin-web:
+    name: admin-web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin_web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/admin_web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  edge-functions:
+    name: edge-functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test supabase/functions/
+
+  rls-tenant-isolation:
+    name: rls-tenant-isolation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/rls-scan.sh
+
+  nomenclature-check:
+    name: nomenclature-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/nomenclature-check.sh
+
+  db-migration-guard:
+    name: db-migration-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: bash .github/scripts/migration-guard.sh
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+  banned-deps:
+    name: banned-deps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash .github/scripts/banned-deps.sh
