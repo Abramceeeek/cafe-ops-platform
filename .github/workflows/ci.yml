@@ -88,3 +88,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash .github/scripts/banned-deps.sh
+
+  db-migration-apply:
+    name: db-migration-apply
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      # Supabase provides auth.users in real envs; stub the minimum so the
+      # profiles FK resolves against a bare Postgres (PROJECT_SPEC §5.1).
+      - name: Bootstrap minimal Supabase auth schema
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE SCHEMA IF NOT EXISTS auth;"
+          psql -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid());"
+      - name: Apply migrations in order
+        run: |
+          shopt -s nullglob
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "--- applying $f"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
