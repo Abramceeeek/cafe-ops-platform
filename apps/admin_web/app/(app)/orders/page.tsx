@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderStatusBadge } from "@/components/order-status-badge";
+import { ReceiptButton } from "@/components/receipt-button";
 
 interface OrderRow {
   id: string;
@@ -87,6 +88,7 @@ export default function OrdersPage() {
                 Confirm Receipt
               </Button>
             )}
+            {r.status === "delivered" && <ReceiptButton orderId={r.id} />}
           </CardContent>
         </Card>
       ))}
