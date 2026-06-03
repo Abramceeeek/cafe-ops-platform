@@ -42,7 +42,10 @@ const NAV: NavItem[] = [
 ];
 
 // Routes that actually exist today. Extend as stages land.
-const READY = new Set(["/", "/catalog", "/request", "/inbox", "/orders", "/board", "/manifest"]);
+const READY = new Set([
+  "/", "/catalog", "/request", "/inbox", "/orders", "/board", "/manifest",
+  "/live-ops", "/finance", "/users",
+]);
 
 const ROLE_LABEL: Record<string, string> = {
   foh_manager: "FOH Manager",
