@@ -77,14 +77,17 @@ DO $$ DECLARE c int; bad int; BEGIN
 END $$;
 RESET ROLE;
 
--- ── Meat specialist: status NOT IN (pending/cancelled/rejected) (3) ──
+-- ── Specialist: sees all non-terminal orders incl. pending_request (0013) ──
+-- (5 seeded, none cancelled/rejected → all 5 visible; must see the 2 pending.)
 SET request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222201"}';
 SET ROLE authenticated;
-DO $$ DECLARE c int; bad int; BEGIN
+DO $$ DECLARE c int; pend int; term int; BEGIN
   SELECT count(*) INTO c FROM orders;
-  IF c <> 3 THEN RAISE EXCEPTION 'Meat specialist should see 3 orders, saw %', c; END IF;
-  SELECT count(*) INTO bad FROM orders WHERE status = 'pending_request';
-  IF bad <> 0 THEN RAISE EXCEPTION 'Specialist must not see pending_request, saw %', bad; END IF;
+  IF c <> 5 THEN RAISE EXCEPTION 'Specialist should see 5 non-terminal orders, saw %', c; END IF;
+  SELECT count(*) INTO pend FROM orders WHERE status = 'pending_request';
+  IF pend <> 2 THEN RAISE EXCEPTION 'Specialist should see the 2 pending requests, saw %', pend; END IF;
+  SELECT count(*) INTO term FROM orders WHERE status IN ('cancelled', 'rejected');
+  IF term <> 0 THEN RAISE EXCEPTION 'Specialist must not see terminal orders, saw %', term; END IF;
 END $$;
 RESET ROLE;
 
