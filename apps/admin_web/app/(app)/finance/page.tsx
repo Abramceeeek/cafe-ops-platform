@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, FileBarChart } from "lucide-react";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,8 +24,30 @@ interface Row {
   order_items: { quantity: number; unit_cost: number | null; products: { name: string } | null }[];
 }
 
+interface Statement {
+  shop_id: string;
+  shop_name: string;
+  total: number;
+  count: number;
+  url: string | null;
+}
+
 export default function FinancePage() {
   const [rows, setRows] = useState<Row[]>([]);
+  const [statements, setStatements] = useState<Statement[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  async function genMonthly() {
+    setBusy(true);
+    const { data, error } = await createClient().functions.invoke("generate-monthly-statement", {
+      body: {},
+    });
+    setBusy(false);
+    if (error) return toast.error(error.message);
+    const st = (data as { statements?: Statement[] } | null)?.statements ?? [];
+    setStatements(st);
+    toast.success(`Generated ${st.length} statement(s) for last month`);
+  }
 
   const load = useCallback(async () => {
     const { data } = await createClient()
@@ -56,10 +79,40 @@ export default function FinancePage() {
           <h1 className="text-2xl font-semibold tracking-tight">Finance</h1>
           <p className="text-sm text-muted-foreground">Delivered orders (internal transfer records).</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()}>
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void genMonthly()}>
+            <FileBarChart className="h-4 w-4" /> {busy ? "Generating…" : "Last month statements"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => void load()}>
+            <RefreshCw className="h-4 w-4" /> Refresh
+          </Button>
+        </div>
       </div>
+
+      {statements.length > 0 && (
+        <Card>
+          <CardContent className="space-y-2 pt-4">
+            <p className="text-sm font-medium">Monthly statements</p>
+            {statements.map((s) => (
+              <div key={s.shop_id} className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {s.shop_name} — {s.count} deliveries · £{s.total.toFixed(2)}
+                </span>
+                {s.url && (
+                  <a
+                    className="font-medium text-primary hover:underline"
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Download PDF
+                  </a>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="pt-4">
