@@ -1,7 +1,9 @@
 "use client";
 
+import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
 
 export default function SignOutButton() {
   const router = useRouter();
@@ -11,8 +13,9 @@ export default function SignOutButton() {
     router.refresh();
   }
   return (
-    <button type="button" onClick={signOut}>
+    <Button variant="ghost" size="sm" onClick={signOut}>
+      <LogOut className="h-4 w-4" />
       Sign out
-    </button>
+    </Button>
   );
 }
