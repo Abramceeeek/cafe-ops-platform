@@ -37,12 +37,12 @@ export default function OrdersPage() {
     void load();
   }, [load]);
 
-  async function finalConfirm(orderId: string) {
+  async function transition(orderId: string, newStatus: string, ok: string) {
     const { error } = await createClient().functions.invoke("order-state-change", {
-      body: { order_id: orderId, new_status: "shop_confirmed" },
+      body: { order_id: orderId, new_status: newStatus },
     });
     if (error) return toast.error(error.message);
-    toast.success("Order confirmed");
+    toast.success(ok);
     await load();
   }
 
@@ -78,8 +78,13 @@ export default function OrdersPage() {
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">{summary(r)}</p>
             {r.status === "specialist_approved" && (
-              <Button size="sm" onClick={() => void finalConfirm(r.id)}>
+              <Button size="sm" onClick={() => void transition(r.id, "shop_confirmed", "Order confirmed")}>
                 Final Confirm
+              </Button>
+            )}
+            {r.status === "in_transit" && (
+              <Button size="sm" onClick={() => void transition(r.id, "delivered", "Delivery confirmed")}>
+                Confirm Receipt
               </Button>
             )}
           </CardContent>
