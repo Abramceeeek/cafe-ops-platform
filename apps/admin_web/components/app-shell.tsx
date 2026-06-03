@@ -41,8 +41,8 @@ const NAV: NavItem[] = [
   { href: "/users", label: "Users", icon: Users, roles: ["admin"] },
 ];
 
-// Routes that actually exist today (Stage 0). Extend as stages land.
-const READY = new Set(["/", "/catalog"]);
+// Routes that actually exist today. Extend as stages land.
+const READY = new Set(["/", "/catalog", "/request"]);
 
 const ROLE_LABEL: Record<string, string> = {
   foh_manager: "FOH Manager",
