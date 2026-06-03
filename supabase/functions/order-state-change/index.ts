@@ -66,6 +66,15 @@ Deno.serve(async (req) => {
     const { error: uErr } = await admin.from("orders").update(patch).eq("id", order_id);
     if (uErr) throw uErr;
 
+    // On delivery, generate the receipt (non-blocking; failure must not fail sign-off).
+    if (new_status === "delivered") {
+      try {
+        await admin.functions.invoke("generate-receipt", { body: { order_id } });
+      } catch (_) {
+        /* receipt generation is best-effort */
+      }
+    }
+
     return Response.json({ ok: true, from, to: new_status });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 });
