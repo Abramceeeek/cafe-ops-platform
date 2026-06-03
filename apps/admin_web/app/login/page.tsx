@@ -39,16 +39,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-muted p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded bg-primary text-sm font-bold text-primary-foreground">
-              H
-            </div>
-            <CardTitle className="text-xl">HubSync</CardTitle>
-          </div>
-          <CardDescription>Internal staff only. Sign in to continue.</CardDescription>
+          <CardTitle className="font-display text-2xl font-medium">
+            bobo <em>&amp;</em> wild
+          </CardTitle>
+          <CardDescription>
+            <span className="font-bold uppercase tracking-widest text-primary">HubSync</span>
+            {" · "}Internal staff only. Sign in to continue.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-4">
