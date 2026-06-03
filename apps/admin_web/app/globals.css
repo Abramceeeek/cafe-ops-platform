@@ -2,61 +2,76 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ════════════════════════════════════════════════════════════════
+   HubSync · bobo & wild — warm artisanal-utilitarian.
+   Light = shop + admin. Dark (.dark) = Hub kitchen displays.
+   Tokens are direct hex (consumed via var() in tailwind.config.ts).
+   ════════════════════════════════════════════════════════════════ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    --background: #f4eee3; /* paper */
+    --foreground: #241d17; /* ink */
+    --card: #ffffff; /* surface */
+    --card-foreground: #241d17;
+    --popover: #ffffff;
+    --popover-foreground: #241d17;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --primary: #c2410c; /* terracotta */
+    --primary-foreground: #ffffff;
+    --secondary: #f6f0e5; /* surface-3 */
+    --secondary-foreground: #241d17;
+    --muted: #ece3d4; /* paper-2 */
+    --muted-foreground: #8b7e70;
+    --accent: #f8e6d9; /* terra-tint */
+    --accent-foreground: #97320a; /* terra-deep */
 
-    --primary: 243 75% 59%; /* indigo #4F46E5 */
-    --primary-foreground: 0 0% 100%;
+    --destructive: #ae2018;
+    --destructive-foreground: #ffffff;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    --border: #e6dccc; /* line */
+    --input: #d9cdb9; /* line-2 */
+    --ring: #c2410c;
 
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 100%;
+    --radius: 0.875rem; /* 14px */
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 243 75% 59%;
-
-    --radius: 0.5rem;
+    /* semantic status (spec §11.1) */
+    --st-pend: #9a6207;  --st-pend-bg: #faeccb;  --st-pend-line: #ebd49a;
+    --st-prog: #1f57ae;  --st-prog-bg: #dee8f8;  --st-prog-line: #bfd2f0;
+    --st-ready: #c2410c; --st-ready-bg: #f8e1d2; --st-ready-line: #efc6ab;
+    --st-done: #15713a;  --st-done-bg: #d9eedd;  --st-done-line: #b6dcbe;
+    --st-bad: #ae2018;   --st-bad-bg: #f7dcd7;   --st-bad-line: #eec2ba;
   }
 
   .dark {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 96%;
+    /* Hub kitchen-display dark scope */
+    --background: #16120d;
+    --foreground: #f3ecdf;
+    --card: #211b14;
+    --card-foreground: #f3ecdf;
+    --popover: #211b14;
+    --popover-foreground: #f3ecdf;
 
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 96%;
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 96%;
+    --primary: #e2703a;
+    --primary-foreground: #ffffff;
+    --secondary: #322a20;
+    --secondary-foreground: #f3ecdf;
+    --muted: #2a231b;
+    --muted-foreground: #9e9180;
+    --accent: #3a2519;
+    --accent-foreground: #ee8c5c;
 
-    --primary: 243 75% 66%;
-    --primary-foreground: 0 0% 100%;
+    --destructive: #f0796c;
+    --destructive-foreground: #16120d;
 
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 96%;
+    --border: #34291e;
+    --input: #463928;
+    --ring: #e2703a;
 
-    --destructive: 0 63% 45%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 243 75% 66%;
+    --st-pend: #e7b24b;  --st-pend-bg: #3a2d11;  --st-pend-line: #5c4717;
+    --st-prog: #6fa0e8;  --st-prog-bg: #15233c;  --st-prog-line: #26426e;
+    --st-ready: #f08a4b; --st-ready-bg: #3c2412; --st-ready-line: #6a3e1c;
+    --st-done: #5fc07e;  --st-done-bg: #14301d;  --st-done-line: #1f5232;
+    --st-bad: #f0796c;   --st-bad-bg: #381713;   --st-bad-line: #642921;
   }
 }
 
@@ -66,7 +81,15 @@
   }
   body {
     @apply bg-background text-foreground;
+    letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  /* Display serif for page titles & brand voice (Newsreader) */
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
   }
 }
