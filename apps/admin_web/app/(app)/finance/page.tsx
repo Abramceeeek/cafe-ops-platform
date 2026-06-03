@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ReceiptButton } from "@/components/receipt-button";
 
 interface Row {
   id: string;
@@ -69,6 +70,7 @@ export default function FinancePage() {
                 <TableHead>Delivered</TableHead>
                 <TableHead>Items</TableHead>
                 <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Receipt</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -84,12 +86,15 @@ export default function FinancePage() {
                     <TableCell className="text-right tabular-nums">
                       {t == null ? "—" : `£${t.toFixed(2)}`}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <ReceiptButton orderId={r.id} />
+                    </TableCell>
                   </TableRow>
                 );
               })}
               {rows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                     No delivered orders yet.
                   </TableCell>
                 </TableRow>
