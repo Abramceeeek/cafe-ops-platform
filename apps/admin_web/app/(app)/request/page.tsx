@@ -61,11 +61,14 @@ export default function NewRequestPage() {
   const [options, setOptions] = useState<Option[]>([]);
   const [shopId, setShopId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [serverNow, setServerNow] = useState<Date>(new Date());
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   // add-to-cart dialog
   const [active, setActive] = useState<Product | null>(null);
@@ -89,7 +92,7 @@ export default function NewRequestPage() {
             .order("name"),
           supabase.from("modifier_groups").select("id,product_id,name,is_required").order("display_order"),
           supabase.from("modifier_options").select("id,modifier_group_id,name").order("display_order"),
-          user ? supabase.from("profiles").select("shop_id").eq("id", user.id).single() : Promise.resolve({ data: null }),
+          user ? supabase.from("profiles").select("shop_id, role").eq("id", user.id).single() : Promise.resolve({ data: null }),
           supabase.functions.invoke("get-server-time"),
         ]);
       setCategories(cats ?? []);
@@ -97,7 +100,9 @@ export default function NewRequestPage() {
       setGroups(grps ?? []);
       setOptions(opts ?? []);
       setUserId(user?.id ?? null);
-      setShopId((profileRes.data as { shop_id: string } | null)?.shop_id ?? null);
+      const profile = profileRes.data as { shop_id: string; role: string } | null;
+      setShopId(profile?.shop_id ?? null);
+      setRole(profile?.role ?? null);
       const now = (timeRes.data as { now?: string } | null)?.now;
       if (now) setServerNow(new Date(now));
     })();
@@ -161,6 +166,48 @@ export default function NewRequestPage() {
     toast.success(`Request submitted — ${ids.length} order(s) created.`);
     setCart([]);
     setDeliveryDate("");
+  }
+
+  async function saveTemplate() {
+    if (!shopId || !userId || !role) return toast.error("Your profile has no shop assigned.");
+    if (cart.length === 0) return toast.error("Cart is empty.");
+    const name = templateName.trim();
+    if (!name) return toast.error("Name the template.");
+    setSavingTemplate(true);
+    const supabase = createClient();
+    const { data: t, error: tErr } = await supabase
+      .from("order_templates")
+      .insert({ shop_id: shopId, created_by: userId, name, role })
+      .select("id")
+      .single();
+    if (tErr || !t) {
+      setSavingTemplate(false);
+      return toast.error(tErr?.message ?? "Could not save template.");
+    }
+    for (const l of cart) {
+      const { data: item, error: iErr } = await supabase
+        .from("order_template_items")
+        .insert({ template_id: t.id, product_id: l.product.id, quantity: l.quantity, custom_note: l.note || null })
+        .select("id")
+        .single();
+      if (iErr || !item) {
+        setSavingTemplate(false);
+        return toast.error(iErr?.message ?? "Could not save template items.");
+      }
+      const modIds = Object.values(l.selected);
+      if (modIds.length > 0) {
+        const { error: mErr } = await supabase
+          .from("order_template_item_modifiers")
+          .insert(modIds.map((oid) => ({ template_item_id: item.id, modifier_option_id: oid })));
+        if (mErr) {
+          setSavingTemplate(false);
+          return toast.error(mErr.message);
+        }
+      }
+    }
+    setSavingTemplate(false);
+    setTemplateName("");
+    toast.success(`Template "${name}" saved.`);
   }
 
   return (
@@ -254,6 +301,24 @@ export default function NewRequestPage() {
             <Button className="w-full" disabled={submitting || cart.length === 0} onClick={submit}>
               {submitting ? "Submitting…" : "Submit Request"}
             </Button>
+
+            {cart.length > 0 && (
+              <div className="space-y-2 border-t pt-3">
+                <Label htmlFor="tmpl">Save as template</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="tmpl"
+                    maxLength={50}
+                    placeholder="e.g. Tuesday restock"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                  />
+                  <Button variant="outline" disabled={savingTemplate || !templateName.trim()} onClick={saveTemplate}>
+                    {savingTemplate ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

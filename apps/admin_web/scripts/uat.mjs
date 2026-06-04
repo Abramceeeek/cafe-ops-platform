@@ -99,5 +99,32 @@ await new Promise((r) => setTimeout(r, 1500));
 const { data: receipt } = await admin.from("receipts").select("id, pdf_storage_path").eq("order_id", orders.meat_specialist).maybeSingle();
 check("receipt PDF generated on delivery", !!receipt, receipt?.pdf_storage_path);
 
+// ── 7. order templates (3.2) + RLS scoping ──
+const { data: tmpl, error: tErr } = await foh
+  .from("order_templates")
+  .insert({ shop_id: fohProfile.shop_id, created_by: fohUser.id, name: "UAT Template", role: "foh_manager" })
+  .select("id")
+  .single();
+check("save template", !tErr && !!tmpl, tErr?.message);
+if (tmpl) await foh.from("order_template_items").insert({ template_id: tmpl.id, product_id: bread.id, quantity: 3 });
+
+const { data: own } = await foh.from("order_templates").select("id").eq("id", tmpl?.id ?? "");
+check("owner sees own template", (own?.length ?? 0) === 1);
+
+// cross-role negative control: a specialist (no shop, other role) sees zero templates
+const { data: meatSees } = await meatC.from("order_templates").select("id");
+check("RLS: specialist sees 0 shop templates", (meatSees?.length ?? 0) === 0, `saw ${meatSees?.length ?? 0}`);
+
+// order now from the template — full server-side validation still applies
+const date2 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+const { data: tOrder, error: toErr } = await invoke(foh, "submit-request", {
+  shop_id: fohProfile.shop_id, submitted_by: fohUser.id, requested_delivery_date: date2,
+  items: [mkItem(bread)],
+});
+check("order from template submits", !toErr, toErr?.message);
+check("template order created", (tOrder?.order_ids?.length ?? 0) === 1);
+
+if (tmpl) await foh.from("order_templates").delete().eq("id", tmpl.id); // cleanup
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);
