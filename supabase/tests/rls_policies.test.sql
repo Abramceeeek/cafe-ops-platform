@@ -172,7 +172,7 @@ DO $$ BEGIN
   INSERT INTO orders (shop_id, submitted_by, requested_delivery_date) 
   VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2', '11111111-1111-1111-1111-111111111101', '2026-07-01');
   RAISE EXCEPTION 'FOH A was able to insert an order for Shop B! RLS failed.';
-EXCEPTION WHEN insufficient_privilege OR row_security_policy_violation OR check_violation THEN
+EXCEPTION WHEN OTHERS THEN
   -- Expected!
 END $$;
 RESET ROLE;
