@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin_web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/admin_web", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}
