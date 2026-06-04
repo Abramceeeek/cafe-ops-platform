@@ -39,10 +39,15 @@ export default function OrdersPage() {
   }, [load]);
 
   async function transition(orderId: string, newStatus: string, ok: string) {
-    const { error } = await createClient().functions.invoke("order-state-change", {
+    const supabase = createClient();
+    const { error } = await supabase.functions.invoke("order-state-change", {
       body: { order_id: orderId, new_status: newStatus },
     });
     if (error) return toast.error(error.message);
+    // Generate the dispatch receipt once delivery is confirmed.
+    if (newStatus === "delivered") {
+      await supabase.functions.invoke("generate-receipt", { body: { order_id: orderId } });
+    }
     toast.success(ok);
     await load();
   }
