@@ -34,12 +34,19 @@ INSERT INTO products (id, category_id, name, unit, is_available) VALUES
   ('dddddddd-dddd-dddd-dddd-ddddddddddd1','cccccccc-cccc-cccc-cccc-ccccccccccc1','Lamb','kg',TRUE),
   ('dddddddd-dddd-dddd-dddd-ddddddddddd2','cccccccc-cccc-cccc-cccc-ccccccccccc1','Beef (86d)','kg',FALSE);
 
-INSERT INTO orders (shop_id, submitted_by, status, requested_delivery_date, assigned_courier, delivered_at) VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','pending_request','2026-07-01', NULL, NULL),
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','shop_confirmed','2026-07-01', NULL, NULL),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','pending_request','2026-07-01', NULL, NULL),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','ready_for_courier','2026-07-01', '33333333-3333-3333-3333-333333333301', NULL),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','delivered','2026-07-01', '33333333-3333-3333-3333-333333333301', NOW());
+INSERT INTO orders (id, shop_id, submitted_by, status, requested_delivery_date, assigned_courier, delivered_at) VALUES
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','pending_request','2026-07-01', NULL, NULL),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee2', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','shop_confirmed','2026-07-01', NULL, NULL),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee3', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','pending_request','2026-07-01', NULL, NULL),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee4', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','ready_for_courier','2026-07-01', '33333333-3333-3333-3333-333333333301', NULL),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee5', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','delivered','2026-07-01', '33333333-3333-3333-3333-333333333301', NOW());
+
+INSERT INTO order_items (order_id, product_id, quantity) VALUES
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1', 'dddddddd-dddd-dddd-dddd-ddddddddddd1', 1),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee2', 'dddddddd-dddd-dddd-dddd-ddddddddddd1', 1),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee3', 'dddddddd-dddd-dddd-dddd-ddddddddddd1', 1),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee4', 'dddddddd-dddd-dddd-dddd-ddddddddddd1', 1),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee5', 'dddddddd-dddd-dddd-dddd-ddddddddddd1', 1);
 
 DO $$ DECLARE c int; BEGIN
   SELECT count(*) INTO c FROM orders;
