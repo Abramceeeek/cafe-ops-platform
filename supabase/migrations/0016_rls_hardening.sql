@@ -161,7 +161,7 @@ CREATE POLICY "shops_update_own_templates" ON public.order_templates
 
 CREATE POLICY "admin_read_templates" ON public.order_templates FOR SELECT TO authenticated USING (current_role_name() = 'admin');
 CREATE POLICY "admin_read_template_items" ON public.order_template_items FOR SELECT TO authenticated USING (current_role_name() = 'admin');
-CREATE POLICY "admin_read_template_modifiers" ON public.order_template_modifiers FOR SELECT TO authenticated USING (current_role_name() = 'admin');
+CREATE POLICY "admin_read_template_modifiers" ON public.order_template_item_modifiers FOR SELECT TO authenticated USING (current_role_name() = 'admin');
 
 -- Storage Policies
 -- Create policies on storage.objects for the receipts bucket
