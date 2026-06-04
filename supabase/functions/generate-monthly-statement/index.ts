@@ -99,6 +99,21 @@ Deno.serve(async (req) => {
         contentType: "application/pdf",
         upsert: true,
       });
+
+      await admin.from("receipts").delete()
+        .eq("shop_id", shop.id)
+        .eq("period_month", month)
+        .eq("period_year", year)
+        .eq("is_monthly_summary", true);
+
+      await admin.from("receipts").insert({
+        shop_id: shop.id,
+        period_month: month,
+        period_year: year,
+        pdf_storage_path: path,
+        total_cost: agg.total,
+        is_monthly_summary: true,
+      });
       const { data: signed } = await admin.storage.from("receipts").createSignedUrl(path, 300);
       statements.push({
         shop_id: shop.id,

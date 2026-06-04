@@ -110,8 +110,18 @@ Deno.serve(async (req) => {
     const tsCol = STATUS_TIMESTAMP[new_status];
     if (tsCol) patch[tsCol] = new Date().toISOString();
 
-    const { error: uErr } = await admin.from("orders").update(patch).eq("id", order_id);
+    const { data: updated, error: uErr } = await admin
+      .from("orders")
+      .update(patch)
+      .eq("id", order_id)
+      .eq("status", from)
+      .select("id")
+      .maybeSingle();
+
     if (uErr) throw uErr;
+    if (!updated) {
+      return Response.json({ error: "concurrent_modification" }, { status: 409, headers: corsHeaders });
+    }
 
     // Receipt generation on 'delivered' is triggered client-side after this
     // returns (reliable; function-to-function invoke here was flaky).

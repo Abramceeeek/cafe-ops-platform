@@ -116,43 +116,17 @@ Deno.serve(async (req) => {
     const created: string[] = [];
 
     for (const items of Object.values(groups)) {
-      const { data: order, error: oErr } = await admin
-        .from("orders")
-        .insert({
-          shop_id: profile.shop_id,
-          submitted_by: user.id,
-          status: "pending_request",
-          requested_delivery_date: payload.requested_delivery_date,
-        })
-        .select("id")
-        .single();
-      if (oErr) throw oErr;
+      const { data, error: rpcErr } = await admin.rpc("submit_request_atomic", {
+        p_shop_id: profile.shop_id,
+        p_submitted_by: user.id,
+        p_requested_delivery_date: payload.requested_delivery_date,
+        p_items: items,
+      });
 
-      for (const it of items) {
-        const { data: item, error: iErr } = await admin
-          .from("order_items")
-          .insert({
-            order_id: order.id,
-            product_id: it.product_id,
-            quantity: it.quantity,
-            unit: it.unit,
-            custom_note: it.custom_note ?? null,
-          })
-          .select("id")
-          .single();
-        if (iErr) throw iErr;
-
-        for (const m of it.modifiers ?? []) {
-          const { error: mErr } = await admin.from("order_item_modifiers").insert({
-            order_item_id: item.id,
-            modifier_option_id: m.modifier_option_id,
-            modifier_group_name: m.modifier_group_name,
-            modifier_option_name: m.modifier_option_name,
-          });
-          if (mErr) throw mErr;
-        }
+      if (rpcErr) throw rpcErr;
+      if (data && data.order_id) {
+        created.push(data.order_id);
       }
-      created.push(order.id);
     }
 
     return Response.json({ ok: true, order_ids: created }, { headers: corsHeaders });
