@@ -154,6 +154,7 @@ END $$;
 RESET ROLE;
 
 -- ── Anon: sees exactly zero rows on everything ──────────────────────
+SET request.jwt.claims = '{}';
 SET ROLE anon;
 DO $$ DECLARE c int; BEGIN
   SELECT count(*) INTO c FROM orders;
