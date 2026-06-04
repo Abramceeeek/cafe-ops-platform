@@ -13,7 +13,7 @@ here costs money except the optional backup line. `[you]` = needs the owner;
 - [ ] Vercel prod env vars present: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. `[verify]`
 
 ## 2. Real data — replace the test/seed data
-- [ ] Create the **real staff logins** (replace `*.hubsync.test`) — real emails, strong passwords, correct role + shop, `is_active`. `[you creates users, me scripts profiles]`
+- [ ] Create the **real staff logins** (replace `*.hubsync.test`) — fill `apps/admin_web/scripts/staff-roster.json` (copy from `staff-roster.example.json`, git-ignored) then run `node scripts/seed-real-staff.mjs` (`--dry-run` first). Creates auth users + profiles idempotently and prints initial passwords. `[me scripted; you supply roster + run]`
 - [ ] Shops: keep Shop A–G or load the **real 7 locations** (Shoreditch, Clapham, St. Albans, Chigwell, Stratford, South Woodford, Wanstead). `[decision]`
 - [ ] Catalog: keep sample or load the **real bobo & wild catalog** (kitchen bread / smoked-meat / pastry) with lead times + category→specialist. `[decision, me seeds]`
 - [ ] Set **unit costs** on products if you want receipt/finance £ totals (blank now → shows "—"). `[decision]`
@@ -38,10 +38,10 @@ here costs money except the optional backup line. `[you]` = needs the owner;
 - [ ] Tell staff to **"Add to Home Screen"** for an app-like icon. `[optional]`
 
 ## 5. Known limitations to accept before relying on it
-- **No push notifications** — staff must open the app to see new orders (FCM comes with native apps). 
+- **No push notifications yet** — in-app realtime alerts work while the app is open (bell + toasts); device push (FCM) comes with the native apps.
 - **No offline mode** (web needs connectivity).
-- **Monthly statement is manual** (admin button), not an auto-cron.
-- **Cut-off warning** and **order templates** not built.
+- **Monthly statement** + **cut-off warning** crons are built but need scheduling — see `docs/CRONS.md` (owner enables `pg_cron`/`pg_net` + Vault). Until then the monthly statement runs from the admin button and the cut-off warning is a no-op.
+- **Order templates** are built (Save as Template → Templates → Order Now).
 - **Native iOS/Android apps** not built (Stage E; iOS needs Apple Developer $99/yr).
 
 ## 6. After UAT

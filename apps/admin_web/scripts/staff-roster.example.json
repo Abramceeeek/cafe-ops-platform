@@ -1,0 +1,12 @@
+[
+  { "email": "manager.shoreditch@bobowild.com", "full_name": "Jane Shoreditch", "role": "foh_manager", "shop": "Shoreditch" },
+  { "email": "kitchen.shoreditch@bobowild.com", "full_name": "Sam Shoreditch", "role": "kitchen_manager", "shop": "Shoreditch" },
+  { "email": "manager.clapham@bobowild.com", "full_name": "Alex Clapham", "role": "foh_manager", "shop": "Clapham" },
+
+  { "email": "meat@bobowild.com", "full_name": "Hub Meat Specialist", "role": "meat_specialist" },
+  { "email": "bread@bobowild.com", "full_name": "Hub Bread Baker", "role": "bread_baker" },
+  { "email": "pastry@bobowild.com", "full_name": "Hub Pastry Chef", "role": "pastry_chef" },
+  { "email": "courier@bobowild.com", "full_name": "Hub Courier", "role": "courier" },
+
+  { "email": "owner@bobowild.com", "full_name": "Owner / Admin", "role": "admin" }
+]
