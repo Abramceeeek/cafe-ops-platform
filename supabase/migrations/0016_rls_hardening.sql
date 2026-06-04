@@ -57,7 +57,7 @@ ALTER TABLE public.manifest_stops ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "couriers_read_manifests" ON public.delivery_manifests
   FOR SELECT TO authenticated
-  USING (assigned_courier = auth.uid() OR current_role_name() = 'admin');
+  USING (courier_id = auth.uid() OR current_role_name() = 'admin');
 
 CREATE POLICY "couriers_read_stops" ON public.manifest_stops
   FOR SELECT TO authenticated
@@ -65,7 +65,7 @@ CREATE POLICY "couriers_read_stops" ON public.manifest_stops
     EXISTS (
       SELECT 1 FROM public.delivery_manifests m
       WHERE m.id = manifest_stops.manifest_id
-      AND (m.assigned_courier = auth.uid() OR current_role_name() = 'admin')
+      AND (m.courier_id = auth.uid() OR current_role_name() = 'admin')
     )
   );
 
