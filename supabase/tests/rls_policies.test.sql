@@ -109,4 +109,39 @@ DO $$ DECLARE c int; BEGIN
 END $$;
 RESET ROLE;
 
+-- ── ORDER TEMPLATES: scoped by shop AND role (0014) ─────────────────
+-- Seed a Kitchen manager at Shop A + 3 templates (FOH A, Kitchen A, FOH B).
+INSERT INTO auth.users (id) VALUES
+  ('11111111-1111-1111-1111-111111111103');  -- Kitchen A
+INSERT INTO profiles (id, full_name, role, shop_id) VALUES
+  ('11111111-1111-1111-1111-111111111103','Kitchen A','kitchen_manager','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1');
+INSERT INTO order_templates (id, shop_id, created_by, name, role) VALUES
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','FOH A tmpl','foh_manager'),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee2','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111103','Kitchen A tmpl','kitchen_manager'),
+  ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee3','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','FOH B tmpl','foh_manager');
+
+-- FOH A: sees ONLY its own template (1) — not Shop B's, not Kitchen's.
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; other_shop int; other_role int; BEGIN
+  SELECT count(*) INTO c FROM order_templates;
+  IF c <> 1 THEN RAISE EXCEPTION 'FOH A should see 1 template, saw % (RLS inactive?)', c; END IF;
+  SELECT count(*) INTO other_shop FROM order_templates WHERE shop_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2';
+  IF other_shop <> 0 THEN RAISE EXCEPTION 'FOH A must not see Shop B templates, saw %', other_shop; END IF;
+  SELECT count(*) INTO other_role FROM order_templates WHERE role = 'kitchen_manager';
+  IF other_role <> 0 THEN RAISE EXCEPTION 'FOH A must not see Kitchen templates, saw %', other_role; END IF;
+END $$;
+RESET ROLE;
+
+-- Kitchen A: sees ONLY its own template (1) — not FOH's.
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111103"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; foh int; BEGIN
+  SELECT count(*) INTO c FROM order_templates;
+  IF c <> 1 THEN RAISE EXCEPTION 'Kitchen A should see 1 template, saw %', c; END IF;
+  SELECT count(*) INTO foh FROM order_templates WHERE role = 'foh_manager';
+  IF foh <> 0 THEN RAISE EXCEPTION 'Kitchen A must not see FOH templates, saw %', foh; END IF;
+END $$;
+RESET ROLE;
+
 SELECT 'rls_policies.test.sql: all scenarios passed' AS result;
