@@ -7,8 +7,46 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 import { monthRange, previousMonth, sumByShop } from "./lib.ts";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
+  }
+
   try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) {
+      return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+
+    const { data: profile } = await userClient
+      .from("profiles")
+      .select("role, is_active")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || !profile.is_active || profile.role !== "admin") {
+      return Response.json({ error: "forbidden" }, { status: 403, headers: corsHeaders });
+    }
+
     const body = (await req.json().catch(() => ({}))) as { year?: number; month?: number };
     const pm = previousMonth(new Date());
     const year = body.year ?? pm.year;
@@ -16,7 +54,7 @@ Deno.serve(async (req) => {
     const { start, end } = monthRange(year, month);
 
     const admin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
+      supabaseUrl,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { persistSession: false } },
     );
@@ -71,8 +109,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    return Response.json({ period: `${year}-${mm}`, statements });
+    return Response.json({ period: `${year}-${mm}`, statements }, { headers: corsHeaders });
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
+    return Response.json({ error: "internal_server_error" }, { status: 500, headers: corsHeaders });
   }
 });

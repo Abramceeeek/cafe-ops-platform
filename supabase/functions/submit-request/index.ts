@@ -1,15 +1,17 @@
 // submit-request Edge Function — ROADMAP 2.3, PROJECT_SPEC §8.
 // Validates cut-off + lead time server-side, splits a multi-category cart into
 // one order per specialist, and inserts orders/items atomically (service role).
-//
-// v0 scope: trusts the authenticated caller's shop context from the payload;
-// JWT-derived submitted_by hardening and FCM dispatch come next.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { splitByCategory, validateCart, type CartItem } from "./lib.ts";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 interface Payload {
-  shop_id: string;
-  submitted_by: string;
+  shop_id: string; // Ignored: overridden by server
+  submitted_by: string; // Ignored: overridden by server
   requested_delivery_date: string; // YYYY-MM-DD
   items: Array<
     CartItem & {
@@ -36,31 +38,89 @@ function isCutoffPassed(now: Date, cutoffHour = 16): boolean {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
+  }
+
   try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) {
+      return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+
+    const { data: profile } = await userClient
+      .from("profiles")
+      .select("role, shop_id, is_active")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || !profile.is_active) {
+      return Response.json({ error: "forbidden" }, { status: 403, headers: corsHeaders });
+    }
+
+    if (profile.role !== "foh_manager" && profile.role !== "kitchen_manager") {
+      return Response.json({ error: "role_not_permitted" }, { status: 403, headers: corsHeaders });
+    }
+    if (!profile.shop_id) {
+      return Response.json({ error: "no_shop_assigned" }, { status: 403, headers: corsHeaders });
+    }
+
     const payload = (await req.json()) as Payload;
     const now = new Date();
     const cutoffPassed = isCutoffPassed(now);
 
-    const check = validateCart(payload.items, payload.requested_delivery_date, now, cutoffPassed);
-    if (!check.ok) {
-      return Response.json({ error: "validation_failed", details: check.errors }, { status: 400 });
+    const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } });
+
+    // Look up true product lead times and categories to prevent client tampering
+    const productIds = payload.items.map(i => i.product_id);
+    const { data: dbProducts, error: dbErr } = await admin
+      .from("products")
+      .select("id, category_id, lead_time_hours, unit")
+      .in("id", productIds);
+
+    if (dbErr) throw dbErr;
+    const prodMap = new Map(dbProducts?.map(p => [p.id, p]) ?? []);
+
+    for (const item of payload.items) {
+      const real = prodMap.get(item.product_id);
+      if (!real) {
+        return Response.json({ error: "validation_failed", details: [`Product not found: ${item.product_id}`] }, { status: 400, headers: corsHeaders });
+      }
+      item.category_id = real.category_id;
+      item.lead_time_hours = real.lead_time_hours;
+      item.unit = real.unit;
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { auth: { persistSession: false } },
-    );
+    const check = validateCart(payload.items, payload.requested_delivery_date, now, cutoffPassed);
+    if (!check.ok) {
+      return Response.json({ error: "validation_failed", details: check.errors }, { status: 400, headers: corsHeaders });
+    }
 
     const groups = splitByCategory(payload.items);
     const created: string[] = [];
 
     for (const items of Object.values(groups)) {
-      const { data: order, error: oErr } = await supabase
+      const { data: order, error: oErr } = await admin
         .from("orders")
         .insert({
-          shop_id: payload.shop_id,
-          submitted_by: payload.submitted_by,
+          shop_id: profile.shop_id,
+          submitted_by: user.id,
           status: "pending_request",
           requested_delivery_date: payload.requested_delivery_date,
         })
@@ -69,7 +129,7 @@ Deno.serve(async (req) => {
       if (oErr) throw oErr;
 
       for (const it of items) {
-        const { data: item, error: iErr } = await supabase
+        const { data: item, error: iErr } = await admin
           .from("order_items")
           .insert({
             order_id: order.id,
@@ -83,7 +143,7 @@ Deno.serve(async (req) => {
         if (iErr) throw iErr;
 
         for (const m of it.modifiers ?? []) {
-          const { error: mErr } = await supabase.from("order_item_modifiers").insert({
+          const { error: mErr } = await admin.from("order_item_modifiers").insert({
             order_item_id: item.id,
             modifier_option_id: m.modifier_option_id,
             modifier_group_name: m.modifier_group_name,
@@ -95,8 +155,8 @@ Deno.serve(async (req) => {
       created.push(order.id);
     }
 
-    return Response.json({ ok: true, order_ids: created });
+    return Response.json({ ok: true, order_ids: created }, { headers: corsHeaders });
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
+    return Response.json({ error: "internal_server_error" }, { status: 500, headers: corsHeaders });
   }
 });
