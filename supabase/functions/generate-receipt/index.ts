@@ -68,7 +68,9 @@ Deno.serve(async (req) => {
       .select(
         `id, shop_id, requested_delivery_date, delivered_at, status, receipt_id,
          shops ( name ),
-         order_items ( quantity, unit, unit_cost, products ( name ), order_item_modifiers ( modifier_option_name ) )`,
+         courier:profiles!orders_assigned_courier_fkey ( full_name ),
+         manifest_stops ( signature_data, signed_off_by:profiles!manifest_stops_signed_off_by_fkey ( full_name ) ),
+         order_items ( quantity, unit, unit_cost, products ( name ), order_item_modifiers ( modifier_option_name ) )`
       )
       .eq("id", order_id)
       .single();
@@ -121,6 +123,22 @@ Deno.serve(async (req) => {
     line(`Receipt #: ${receiptId.slice(-8).toUpperCase()}`);
     line(`Shop: ${shopName}`);
     line(`Delivery date: ${order.requested_delivery_date}`);
+    
+    const issuedStr = order.delivered_at 
+      ? new Date(order.delivered_at).toISOString().replace("T", " ").slice(0, 16) 
+      : "N/A";
+    line(`Date Issued: ${issuedStr}`);
+
+    const courierObj = order.courier as unknown as { full_name: string } | null;
+    line(`Courier: ${courierObj?.full_name ?? "Unknown"}`);
+
+    const stopsArr = order.manifest_stops as unknown as Array<{
+      signature_data: string | null;
+      signed_off_by: { full_name: string } | null;
+    }> | null;
+    const stop = stopsArr && stopsArr.length > 0 ? stopsArr[0] : null;
+    line(`Received By: ${stop?.signed_off_by?.full_name ?? "Unknown"}`);
+    line(`Signature Captured: ${stop?.signature_data ? "Yes" : "No"}`);
     y -= 6;
     line("ITEMS DELIVERED:", 12, true);
     for (const l of model.lines) line(`${l.desc}  x ${l.qty}    ${l.amount}`);

@@ -25,17 +25,7 @@ interface Payload {
   >;
 }
 
-// London cut-off check. Intl gives the local hour without a tz dependency.
-function isCutoffPassed(now: Date, cutoffHour = 16): boolean {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/London",
-      hour: "2-digit",
-      hour12: false,
-    }).format(now),
-  );
-  return hour >= cutoffHour;
-}
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -83,9 +73,30 @@ Deno.serve(async (req) => {
 
     const payload = (await req.json()) as Payload;
     const now = new Date();
-    const cutoffPassed = isCutoffPassed(now);
 
     const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } });
+
+    // F-19: Fetch cut-off config from DB
+    const { data: cutoffConfig } = await admin
+      .from("cutoff_config")
+      .select("cutoff_time, timezone")
+      .lte("effective_from", new Date().toISOString().slice(0, 10))
+      .order("effective_from", { ascending: false })
+      .limit(1)
+      .single();
+
+    const cutoffTimeString = cutoffConfig?.cutoff_time || "16:00:00";
+    const tz = cutoffConfig?.timezone || "Europe/London";
+    const cutoffHour = parseInt(cutoffTimeString.split(":")[0] || "16", 10);
+    
+    const hourNow = Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz,
+        hour: "2-digit",
+        hour12: false,
+      }).format(now),
+    );
+    const cutoffPassed = hourNow >= cutoffHour;
 
     // Look up true product lead times and categories to prevent client tampering
     const productIds = payload.items.map(i => i.product_id);
