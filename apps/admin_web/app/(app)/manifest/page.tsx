@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderStatusBadge } from "@/components/order-status-badge";
+import { updateOrderStatus } from "@/app/actions/orders";
 
 interface ManifestRow {
   id: string;
@@ -37,10 +38,10 @@ export default function ManifestPage() {
   }, [load]);
 
   async function pickup(orderId: string) {
-    const { error } = await createClient().functions.invoke("order-state-change", {
-      body: { order_id: orderId, new_status: "in_transit" },
-    });
-    if (error) return toast.error(error.message);
+    const response = await updateOrderStatus({ order_id: orderId, new_status: "in_transit" });
+    if (response.error) {
+      return toast.error(response.error + (response.details ? ": " + response.details : ""));
+    }
     toast.success("Picked up — in transit");
     await load();
   }

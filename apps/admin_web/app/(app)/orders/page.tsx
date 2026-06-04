@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrderStatusBadge } from "@/components/order-status-badge";
 import { ReceiptButton } from "@/components/receipt-button";
+import { updateOrderStatus } from "@/app/actions/orders";
 
 interface OrderRow {
   id: string;
@@ -40,10 +41,10 @@ export default function OrdersPage() {
 
   async function transition(orderId: string, newStatus: string, ok: string) {
     const supabase = createClient();
-    const { error } = await supabase.functions.invoke("order-state-change", {
-      body: { order_id: orderId, new_status: newStatus },
-    });
-    if (error) return toast.error(error.message);
+    const response = await updateOrderStatus({ order_id: orderId, new_status: newStatus });
+    if (response.error) {
+      return toast.error(response.error + (response.details ? ": " + response.details : ""));
+    }
     // Generate the dispatch receipt once delivery is confirmed.
     if (newStatus === "delivered") {
       await supabase.functions.invoke("generate-receipt", { body: { order_id: orderId } });

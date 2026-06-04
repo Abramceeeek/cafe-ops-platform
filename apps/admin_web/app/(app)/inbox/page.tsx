@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { updateOrderStatus } from "@/app/actions/orders";
 
 interface InboxRow {
   id: string;
@@ -61,10 +62,10 @@ export default function InboxPage() {
   }, [load]);
 
   async function act(orderId: string, newStatus: "specialist_approved" | "rejected") {
-    const { error } = await createClient().functions.invoke("order-state-change", {
-      body: { order_id: orderId, new_status: newStatus },
-    });
-    if (error) return toast.error(error.message);
+    const response = await updateOrderStatus({ order_id: orderId, new_status: newStatus });
+    if (response.error) {
+      return toast.error(response.error + (response.details ? ": " + response.details : ""));
+    }
     toast.success(newStatus === "specialist_approved" ? "Approved" : "Rejected");
     await load();
   }

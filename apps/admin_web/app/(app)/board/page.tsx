@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { updateOrderStatus } from "@/app/actions/orders";
+
 interface BoardRow {
   id: string;
   status: string;
@@ -71,10 +73,10 @@ export default function BoardPage() {
   }, [load]);
 
   async function advance(orderId: string, to: string) {
-    const { error } = await createClient().functions.invoke("order-state-change", {
-      body: { order_id: orderId, new_status: to },
-    });
-    if (error) return toast.error(error.message);
+    const response = await updateOrderStatus({ order_id: orderId, new_status: to });
+    if (response.error) {
+      return toast.error(response.error + (response.details ? ": " + response.details : ""));
+    }
     await load();
   }
 

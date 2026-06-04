@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Trash2, Clock, ShoppingCart } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { submitOrder } from "@/app/actions/orders";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -146,13 +147,14 @@ export default function TemplatesPage() {
         modifier_option_name: m.modifier_options?.name ?? "",
       })),
     }));
-    const { data, error } = await createClient().functions.invoke("submit-request", {
-      body: { shop_id: shopId, submitted_by: userId, requested_delivery_date: deliveryDate, items },
-    });
+    const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, items });
     setOrdering(false);
-    if (error) return toast.error(error.message);
+    if (response.error) {
+      const details = Array.isArray(response.details) ? ": " + response.details.join(", ") : (response.details ? ": " + response.details : "");
+      return toast.error(response.error + details);
+    }
     if (excluded > 0) toast.warning(`${excluded} unavailable item(s) were excluded.`);
-    const ids = (data as { order_ids?: string[] } | null)?.order_ids ?? [];
+    const ids = response.order_ids ?? [];
     toast.success(`Request submitted — ${ids.length} order(s) created.`);
     setActive(null);
   }

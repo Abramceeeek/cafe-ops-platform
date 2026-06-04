@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Trash2, Clock } from "lucide-react";
+import { submitOrder } from "@/app/actions/orders";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,12 +159,13 @@ export default function NewRequestPage() {
         modifier_option_name: options.find((o) => o.id === oid)?.name ?? "",
       })),
     }));
-    const { data, error } = await createClient().functions.invoke("submit-request", {
-      body: { shop_id: shopId, submitted_by: userId, requested_delivery_date: deliveryDate, items },
-    });
+    const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, items });
     setSubmitting(false);
-    if (error) return toast.error(error.message);
-    const ids = (data as { order_ids?: string[] } | null)?.order_ids ?? [];
+    if (response.error) {
+      const details = Array.isArray(response.details) ? ": " + response.details.join(", ") : (response.details ? ": " + response.details : "");
+      return toast.error(response.error + details);
+    }
+    const ids = response.order_ids ?? [];
     toast.success(`Request submitted — ${ids.length} order(s) created.`);
     setCart([]);
     setDeliveryDate("");
