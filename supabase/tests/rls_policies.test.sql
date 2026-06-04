@@ -28,11 +28,13 @@ INSERT INTO profiles (id, full_name, role, shop_id) VALUES
   ('44444444-4444-4444-4444-444444444401','Admin','admin',NULL);
 
 INSERT INTO product_categories (id, name, assigned_role) VALUES
-  ('cccccccc-cccc-cccc-cccc-ccccccccccc1','Meat','meat_specialist');
+  ('cccccccc-cccc-cccc-cccc-ccccccccccc1','Meat','meat_specialist'),
+  ('cccccccc-cccc-cccc-cccc-ccccccccccc3','Pastry / Retail Bakery','bread_baker');
 
 INSERT INTO products (id, category_id, name, unit, is_available) VALUES
   ('dddddddd-dddd-dddd-dddd-ddddddddddd1','cccccccc-cccc-cccc-cccc-ccccccccccc1','Lamb','kg',TRUE),
-  ('dddddddd-dddd-dddd-dddd-ddddddddddd2','cccccccc-cccc-cccc-cccc-ccccccccccc1','Beef (86d)','kg',FALSE);
+  ('dddddddd-dddd-dddd-dddd-ddddddddddd2','cccccccc-cccc-cccc-cccc-ccccccccccc1','Beef (86d)','kg',FALSE),
+  ('dddddddd-dddd-dddd-dddd-ddddddddddd4','cccccccc-cccc-cccc-cccc-ccccccccccc3','Croissant','unit',TRUE);
 
 INSERT INTO orders (id, shop_id, submitted_by, status, requested_delivery_date, assigned_courier, delivered_at) VALUES
   ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','pending_request','2026-07-01', NULL, NULL),
