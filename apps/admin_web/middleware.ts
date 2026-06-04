@@ -36,17 +36,27 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  let isActive = true;
+  if (user) {
+    const { data: profile } = await supabase.from("profiles").select("is_active").eq("id", user.id).single();
+    if (profile && profile.is_active === false) {
+      isActive = false;
+    }
+  }
+
   const isLogin = request.nextUrl.pathname.startsWith("/login");
-  if (!user && !isLogin) {
+  
+  if ((!user || !isActive) && !isLogin) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     return NextResponse.redirect(redirect);
   }
-  if (user && isLogin) {
+  if (user && isActive && isLogin) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/";
     return NextResponse.redirect(redirect);
   }
+  
   return response;
 }
 
