@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
       .select(`
         status, 
         shop_id, 
+        requested_delivery_date,
         assigned_courier,
         order_items ( products ( product_categories ( assigned_role ) ) )
       `)
@@ -106,6 +107,19 @@ Deno.serve(async (req) => {
     const tsCol = STATUS_TIMESTAMP[new_status];
     if (tsCol) patch[tsCol] = new Date().toISOString();
 
+    if (new_status === "specialist_approved") {
+      // Auto-assign to default courier to fulfill grouping
+      const { data: courier } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("role", "courier")
+        .limit(1)
+        .single();
+      if (courier) {
+        patch.assigned_courier = courier.id;
+      }
+    }
+
     const { data: updated, error: uErr } = await admin
       .from("orders")
       .update(patch)
@@ -117,6 +131,58 @@ Deno.serve(async (req) => {
     if (uErr) throw uErr;
     if (!updated) {
       return Response.json({ error: "concurrent_modification" }, { status: 409, headers: corsHeaders });
+    }
+
+    if (new_status === "specialist_approved" && patch.assigned_courier) {
+      const courierId = patch.assigned_courier as string;
+      const deliveryDate = order.requested_delivery_date;
+      const shopId = order.shop_id;
+
+      let manifestId: string;
+      const { data: existingManifest } = await admin
+        .from("delivery_manifests")
+        .select("id")
+        .eq("courier_id", courierId)
+        .eq("delivery_date", deliveryDate)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingManifest) {
+        manifestId = existingManifest.id;
+      } else {
+        const { data: newManifest } = await admin
+          .from("delivery_manifests")
+          .insert({ courier_id: courierId, delivery_date: deliveryDate })
+          .select("id")
+          .single();
+        manifestId = newManifest!.id;
+      }
+
+      const { data: existingStop } = await admin
+        .from("manifest_stops")
+        .select("id")
+        .eq("manifest_id", manifestId)
+        .eq("order_id", order_id)
+        .maybeSingle();
+      
+      if (!existingStop) {
+        const { data: seqData } = await admin
+          .from("manifest_stops")
+          .select("stop_sequence")
+          .eq("manifest_id", manifestId)
+          .order("stop_sequence", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+          
+        const nextSeq = (seqData?.stop_sequence || 0) + 1;
+
+        await admin.from("manifest_stops").insert({
+          manifest_id: manifestId,
+          order_id: order_id,
+          shop_id: shopId,
+          stop_sequence: nextSeq
+        });
+      }
     }
 
     if (new_status === "delivered") {
@@ -137,6 +203,6 @@ Deno.serve(async (req) => {
     // returns (reliable; function-to-function invoke here was flaky).
     return Response.json({ ok: true, from, to: new_status }, { headers: corsHeaders });
   } catch (e) {
-    return Response.json({ error: "internal_server_error" }, { status: 500, headers: corsHeaders });
+    return Response.json({ error: "internal_server_error", details: String(e) }, { status: 500, headers: corsHeaders });
   }
 });

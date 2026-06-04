@@ -88,17 +88,30 @@ Deno.serve(async (req) => {
     const cutoffTimeString = cutoffConfig?.cutoff_time || "16:00:00";
     const tz = cutoffConfig?.timezone || "Europe/London";
     const cutoffHour = parseInt(cutoffTimeString.split(":")[0] || "16", 10);
-    
-    const hourNow = Number(
-      new Intl.DateTimeFormat("en-GB", {
-        timeZone: tz,
-        hour: "2-digit",
-        hour12: false,
-      }).format(now),
-    );
+    // Simple check for London time (UTC+0 or UTC+1)
+    // To avoid Deno Intl.DateTimeFormat RangeError bugs
+    const getLondonHour = (d: Date) => {
+      const year = d.getUTCFullYear();
+      // BST starts last Sunday of March
+      const marchEnd = new Date(Date.UTC(year, 2, 31));
+      marchEnd.setUTCDate(31 - marchEnd.getUTCDay());
+      marchEnd.setUTCHours(1);
+      // BST ends last Sunday of October
+      const octEnd = new Date(Date.UTC(year, 9, 31));
+      octEnd.setUTCDate(31 - octEnd.getUTCDay());
+      octEnd.setUTCHours(1);
+      
+      const isBST = d >= marchEnd && d < octEnd;
+      return (d.getUTCHours() + (isBST ? 1 : 0)) % 24;
+    };
+    const hourNow = getLondonHour(now);
     const cutoffPassed = hourNow >= cutoffHour;
 
     // Look up true product lead times and categories to prevent client tampering
+    if (!payload.items || payload.items.length === 0) {
+      return Response.json({ error: "validation_failed", details: ["Cart is empty."] }, { status: 400, headers: corsHeaders });
+    }
+
     const productIds = payload.items.map(i => i.product_id);
     const { data: dbProducts, error: dbErr } = await admin
       .from("products")
@@ -117,8 +130,8 @@ Deno.serve(async (req) => {
         return Response.json({ error: "validation_failed", details: [`Product not found: ${item.product_id}`] }, { status: 400, headers: corsHeaders });
       }
       
-      const requiredGroups = (real.modifier_groups || []).filter((g: any) => g.is_required);
-      const providedNames = new Set((item.modifiers || []).map(m => m.modifier_group_name));
+      const requiredGroups = (real.modifier_groups || []).filter((g: any) => g && g.is_required);
+      const providedNames = new Set((item.modifiers || []).map((m: any) => m ? m.modifier_group_name : null));
       for (const g of requiredGroups) {
         if (!providedNames.has(g.name)) {
           return Response.json({ error: "validation_failed", details: [`Missing required modifier group "${g.name}" for product ${item.product_id}`] }, { status: 400, headers: corsHeaders });

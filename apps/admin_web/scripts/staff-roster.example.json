@@ -5,7 +5,6 @@
 
   { "email": "meat@bobowild.com", "full_name": "Hub Meat Specialist", "role": "meat_specialist" },
   { "email": "bread@bobowild.com", "full_name": "Hub Bread Baker", "role": "bread_baker" },
-  { "email": "pastry@bobowild.com", "full_name": "Hub Pastry Chef", "role": "pastry_chef" },
   { "email": "courier@bobowild.com", "full_name": "Hub Courier", "role": "courier" },
 
   { "email": "owner@bobowild.com", "full_name": "Owner / Admin", "role": "admin" }

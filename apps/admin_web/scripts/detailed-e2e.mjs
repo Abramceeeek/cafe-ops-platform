@@ -39,24 +39,24 @@ async function run() {
   console.log("==================================================\n");
 
   console.log("1. Authenticating test users...");
-  const fohA = await login("foh.shopa@hubsync.test");
+  const bohA = await login("kitchen.shopa@hubsync.test");
   const pastrySpec = await login("pastry@hubsync.test");
   const meatSpec = await login("meat@hubsync.test");
   const breadSpec = await login("bread@hubsync.test");
   const courier = await login("courier@hubsync.test");
   check("All users authenticated successfully", true);
 
-  console.log("\n2. Fetching Catalog as FOH Manager A (Shoreditch)...");
-  const { data: prods, error: pErr } = await fohA.client
+  console.log("\n2. Fetching Catalog as BOH Manager A (Shoreditch)...");
+  const { data: prods, error: pErr } = await bohA.client
     .from("products")
     .select("id, name, lead_time_hours, category_id, product_categories(assigned_role)");
-  check("FOH can read products", !pErr && prods?.length > 0);
+  check("BOH can read products", !pErr && prods?.length > 0);
 
   const bread = prods.find((p) => p.product_categories?.assigned_role === "bread_baker");
   const meat = prods.find((p) => p.product_categories?.assigned_role === "meat_specialist");
   check("Found active Bread and Meat items in catalog", !!bread && !!meat);
 
-  console.log("\n3. FOH A Submits Multi-Category Cart...");
+  console.log("\n3. BOH A Submits Multi-Category Cart...");
   const reqDate = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
   const payload = {
     requested_delivery_date: reqDate,
@@ -66,7 +66,7 @@ async function run() {
     ],
   };
 
-  const { data: subRes, error: subErr } = await fohA.client.functions.invoke("submit-request", { body: payload });
+  const { data: subRes, error: subErr } = await bohA.client.functions.invoke("submit-request", { body: payload });
   if (subErr) console.error("submit-request failed:", subErr.context?.json ? await subErr.context.json() : subErr);
   check("Edge Function: submit-request succeeded", !subErr, subErr?.message);
 
@@ -75,8 +75,8 @@ async function run() {
 
   console.log("\n4. Verifying RLS Tenant Isolation & Visibility (Status: pending_request)");
 
-  const { data: fohA_orders } = await fohA.client.from("orders").select("id").in("id", orderIds);
-  check("FOH A (Shoreditch) sees both orders", fohA_orders?.length === 2);
+  const { data: bohA_orders } = await bohA.client.from("orders").select("id").in("id", orderIds);
+  check("BOH A (Shoreditch) sees both orders", bohA_orders?.length === 2);
 
   const { data: pastry_orders } = await pastrySpec.client.from("orders").select("id").in("id", orderIds);
   check("Pastry Chef sees 0 orders (Cross-role/Status RLS isolation working)", pastry_orders?.length === 0);
@@ -108,11 +108,11 @@ async function run() {
   });
   check("Meat Specialist successfully approves Meat order", !aprErr, aprErr?.message);
 
-  // FOH A Final Confirms
-  const { error: confErr } = await fohA.client.functions.invoke("order-state-change", {
+  // BOH A Final Confirms
+  const { error: confErr } = await bohA.client.functions.invoke("order-state-change", {
     body: { order_id: meatOrderId, new_status: "shop_confirmed" },
   });
-  check("FOH A executes 'Final Confirm' on Meat order", !confErr, confErr?.message);
+  check("BOH A executes 'Final Confirm' on Meat order", !confErr, confErr?.message);
 
   console.log("\n6. Advancing Production Pipeline...");
   for (const status of ["in_progress", "packaged", "ready_for_courier"]) {
@@ -131,10 +131,10 @@ async function run() {
   });
   check("Courier marks order as in_transit", !transErr, transErr?.message);
 
-  const { error: delErr } = await fohA.client.functions.invoke("order-state-change", {
+  const { error: delErr } = await bohA.client.functions.invoke("order-state-change", {
     body: { order_id: meatOrderId, new_status: "delivered" },
   });
-  check("FOH A signs off and marks order as delivered", !delErr, delErr?.message);
+  check("BOH A signs off and marks order as delivered", !delErr, delErr?.message);
 
   console.log("\n🎉 ALL TESTS PASSED. The end-to-end flow is mathematically proven.");
 }
