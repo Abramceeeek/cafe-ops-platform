@@ -13,13 +13,8 @@ const corsHeaders = {
 interface Payload {
   order_id: string;
   new_status: string;
+  signature_data?: string;
 }
-
-const SPECIALIST_CATEGORIES: Record<string, string> = {
-  meat_specialist: "meat",
-  bread_baker: "bread",
-  pastry_chef: "pastry",
-};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -30,7 +25,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { order_id, new_status } = (await req.json()) as Payload;
+    const payload = (await req.json()) as Payload;
+    const { order_id, new_status, signature_data } = payload;
     const url = Deno.env.get("SUPABASE_URL")!;
 
     const authHeader = req.headers.get("Authorization");
@@ -68,7 +64,7 @@ Deno.serve(async (req) => {
         status, 
         shop_id, 
         assigned_courier,
-        order_items ( products ( category_id ) )
+        order_items ( products ( product_categories ( assigned_role ) ) )
       `)
       .eq("id", order_id)
       .single();
@@ -94,10 +90,10 @@ Deno.serve(async (req) => {
       if (order.shop_id !== profile.shop_id) {
         return Response.json({ error: "not_your_shop" }, { status: 403, headers: corsHeaders });
       }
-    } else if (role in SPECIALIST_CATEGORIES) {
-      const items = order.order_items as unknown as Array<{ products: { category_id: string } | null }>;
-      const orderCat = items?.[0]?.products?.category_id;
-      if (orderCat !== SPECIALIST_CATEGORIES[role]) {
+    } else if (role === "meat_specialist" || role === "bread_baker" || role === "pastry_chef") {
+      const items = order.order_items as any;
+      const assignedRole = items?.[0]?.products?.product_categories?.assigned_role;
+      if (assignedRole !== role) {
         return Response.json({ error: "not_your_category" }, { status: 403, headers: corsHeaders });
       }
     } else if (role === "courier") {
@@ -121,6 +117,20 @@ Deno.serve(async (req) => {
     if (uErr) throw uErr;
     if (!updated) {
       return Response.json({ error: "concurrent_modification" }, { status: 409, headers: corsHeaders });
+    }
+
+    if (new_status === "delivered") {
+      const { error: msErr } = await admin
+        .from("manifest_stops")
+        .update({
+          signed_off_by: user.id,
+          signed_off_at: new Date().toISOString(),
+          signature_data: signature_data || null,
+        })
+        .eq("order_id", order_id);
+      if (msErr) {
+        console.error("Failed to update manifest_stops:", msErr);
+      }
     }
 
     // Receipt generation on 'delivered' is triggered client-side after this

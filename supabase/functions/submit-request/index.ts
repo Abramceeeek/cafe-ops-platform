@@ -102,7 +102,10 @@ Deno.serve(async (req) => {
     const productIds = payload.items.map(i => i.product_id);
     const { data: dbProducts, error: dbErr } = await admin
       .from("products")
-      .select("id, category_id, lead_time_hours, unit")
+      .select(`
+        id, category_id, lead_time_hours, unit,
+        modifier_groups ( id, is_required, name )
+      `)
       .in("id", productIds);
 
     if (dbErr) throw dbErr;
@@ -113,6 +116,15 @@ Deno.serve(async (req) => {
       if (!real) {
         return Response.json({ error: "validation_failed", details: [`Product not found: ${item.product_id}`] }, { status: 400, headers: corsHeaders });
       }
+      
+      const requiredGroups = (real.modifier_groups || []).filter((g: any) => g.is_required);
+      const providedNames = new Set((item.modifiers || []).map(m => m.modifier_group_name));
+      for (const g of requiredGroups) {
+        if (!providedNames.has(g.name)) {
+          return Response.json({ error: "validation_failed", details: [`Missing required modifier group "${g.name}" for product ${item.product_id}`] }, { status: 400, headers: corsHeaders });
+        }
+      }
+
       item.category_id = real.category_id;
       item.lead_time_hours = real.lead_time_hours;
       item.unit = real.unit;

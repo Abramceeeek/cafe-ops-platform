@@ -49,8 +49,9 @@ function earliestDate(now: Date, maxLeadHours: number): string {
   );
   const cutoffPassed = londonHour >= 16;
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() + (cutoffPassed ? 2 : 1));
-  d.setUTCHours(d.getUTCHours() + maxLeadHours);
+  const leadDays = Math.max(1, Math.ceil(maxLeadHours / 24));
+  const penalty = cutoffPassed ? 1 : 0;
+  d.setUTCDate(d.getUTCDate() + leadDays + penalty);
   return d.toISOString().slice(0, 10);
 }
 

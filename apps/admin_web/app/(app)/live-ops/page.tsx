@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { OrderStatusBadge } from "@/components/order-status-badge";
@@ -39,16 +40,24 @@ const STATUSES = [
 export default function LiveOpsPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [filter, setFilter] = useState("all");
+  const [isLoading, setIsLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data } = await createClient()
+    setIsLoading(true);
+    const { data, error } = await createClient()
       .from("orders")
       .select(
         `id, status, requested_delivery_date, submitted_at,
          shops ( name ), order_items ( quantity, products ( name ) )`,
       )
       .order("submitted_at", { ascending: false });
-    setRows((data ?? []) as unknown as Row[]);
+    
+    if (error) {
+      toast.error(error.message || "Failed to load orders");
+    } else {
+      setRows((data ?? []) as unknown as Row[]);
+    }
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -80,8 +89,8 @@ export default function LiveOpsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={() => void load()}>
-            <RefreshCw className="h-4 w-4" /> Refresh
+          <Button variant="outline" size="sm" onClick={() => void load()} disabled={isLoading}>
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
         </div>
       </div>
@@ -106,10 +115,18 @@ export default function LiveOpsPage() {
                   <TableCell><OrderStatusBadge status={r.status} /></TableCell>
                 </TableRow>
               ))}
-              {visible.length === 0 && (
+              {visible.length === 0 && !isLoading && (
                 <TableRow>
                   <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
                     No orders.
+                  </TableCell>
+                </TableRow>
+              )}
+              {isLoading && (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                    <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" />
+                    Loading...
                   </TableCell>
                 </TableRow>
               )}
