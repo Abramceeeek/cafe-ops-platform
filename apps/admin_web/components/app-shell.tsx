@@ -9,6 +9,7 @@ import {
   Inbox,
   PlusCircle,
   ClipboardList,
+  Files,
   KanbanSquare,
   Truck,
   Activity,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ModeToggle } from "@/components/mode-toggle";
+import NotificationBell from "@/components/notification-bell";
 import SignOutButton from "@/components/sign-out-button";
 
 interface NavItem {
@@ -33,6 +35,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: [] },
   { href: "/request", label: "New Request", icon: PlusCircle, roles: ["foh_manager", "kitchen_manager"] },
+  { href: "/templates", label: "Templates", icon: Files, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/orders", label: "Orders", icon: ClipboardList, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/inbox", label: "Inbox", icon: Inbox, roles: ["meat_specialist", "bread_baker", "pastry_chef"] },
   { href: "/board", label: "To-Do Board", icon: KanbanSquare, roles: ["meat_specialist", "bread_baker", "pastry_chef"] },
@@ -44,7 +47,7 @@ const NAV: NavItem[] = [
 ];
 
 const READY = new Set([
-  "/", "/catalog", "/request", "/inbox", "/orders", "/board", "/manifest",
+  "/", "/catalog", "/request", "/templates", "/inbox", "/orders", "/board", "/manifest",
   "/live-ops", "/finance", "/users",
 ]);
 
@@ -148,6 +151,7 @@ export function AppShell({
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm text-muted-foreground sm:inline">{email}</span>
+            <NotificationBell role={role} />
             <ModeToggle />
             <SignOutButton />
           </div>
