@@ -89,19 +89,29 @@ CREATE POLICY "read_order_item_modifiers" ON public.order_item_modifiers
   );
 
 -- F-11: Order Visibility Refinements
+CREATE OR REPLACE FUNCTION public.order_has_specialist_items(p_order_id uuid, p_role text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.order_items i
+    JOIN public.products p ON i.product_id = p.id
+    JOIN public.product_categories c ON p.category_id = c.id
+    WHERE i.order_id = p_order_id
+    AND c.assigned_role = p_role
+  );
+$$;
+
 DROP POLICY IF EXISTS "specialists_read_relevant_orders" ON public.orders;
 CREATE POLICY "specialists_read_relevant_orders" ON public.orders
   FOR SELECT TO authenticated
   USING (
     current_role_name() IN ('meat_specialist', 'bread_baker', 'pastry_chef')
     AND status NOT IN ('pending_request', 'cancelled', 'rejected')
-    AND EXISTS (
-      SELECT 1 FROM public.order_items i
-      JOIN public.products p ON i.product_id = p.id
-      JOIN public.product_categories c ON p.category_id = c.id
-      WHERE i.order_id = orders.id
-      AND c.assigned_role = current_role_name()
-    )
+    AND public.order_has_specialist_items(id, current_role_name())
   );
 
 DROP POLICY IF EXISTS "courier_read_assigned_orders" ON public.orders;
