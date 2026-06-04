@@ -1,15 +1,17 @@
 // submit-request Edge Function — ROADMAP 2.3, PROJECT_SPEC §8.
 // Validates cut-off + lead time server-side, splits a multi-category cart into
 // one order per specialist, and inserts orders/items atomically (service role).
-//
-// v0 scope: trusts the authenticated caller's shop context from the payload;
-// JWT-derived submitted_by hardening and FCM dispatch come next.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { splitByCategory, validateCart, type CartItem } from "./lib.ts";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 interface Payload {
-  shop_id: string;
-  submitted_by: string;
+  shop_id: string; // Ignored: overridden by server
+  submitted_by: string; // Ignored: overridden by server
   requested_delivery_date: string; // YYYY-MM-DD
   items: Array<
     CartItem & {
@@ -23,80 +25,123 @@ interface Payload {
   >;
 }
 
-// London cut-off check. Intl gives the local hour without a tz dependency.
-function isCutoffPassed(now: Date, cutoffHour = 16): boolean {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/London",
-      hour: "2-digit",
-      hour12: false,
-    }).format(now),
-  );
-  return hour >= cutoffHour;
-}
+
 
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
+  }
+
   try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false },
+    });
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) {
+      return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+
+    const { data: profile } = await userClient
+      .from("profiles")
+      .select("role, shop_id, is_active")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile || !profile.is_active) {
+      return Response.json({ error: "forbidden" }, { status: 403, headers: corsHeaders });
+    }
+
+    if (profile.role !== "foh_manager" && profile.role !== "kitchen_manager") {
+      return Response.json({ error: "role_not_permitted" }, { status: 403, headers: corsHeaders });
+    }
+    if (!profile.shop_id) {
+      return Response.json({ error: "no_shop_assigned" }, { status: 403, headers: corsHeaders });
+    }
+
     const payload = (await req.json()) as Payload;
     const now = new Date();
-    const cutoffPassed = isCutoffPassed(now);
+
+    const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } });
+
+    // F-19: Fetch cut-off config from DB
+    const { data: cutoffConfig } = await admin
+      .from("cutoff_config")
+      .select("cutoff_time, timezone")
+      .lte("effective_from", new Date().toISOString().slice(0, 10))
+      .order("effective_from", { ascending: false })
+      .limit(1)
+      .single();
+
+    const cutoffTimeString = cutoffConfig?.cutoff_time || "16:00:00";
+    const tz = cutoffConfig?.timezone || "Europe/London";
+    const cutoffHour = parseInt(cutoffTimeString.split(":")[0] || "16", 10);
+    
+    const hourNow = Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz,
+        hour: "2-digit",
+        hour12: false,
+      }).format(now),
+    );
+    const cutoffPassed = hourNow >= cutoffHour;
+
+    // Look up true product lead times and categories to prevent client tampering
+    const productIds = payload.items.map(i => i.product_id);
+    const { data: dbProducts, error: dbErr } = await admin
+      .from("products")
+      .select("id, category_id, lead_time_hours, unit")
+      .in("id", productIds);
+
+    if (dbErr) throw dbErr;
+    const prodMap = new Map(dbProducts?.map(p => [p.id, p]) ?? []);
+
+    for (const item of payload.items) {
+      const real = prodMap.get(item.product_id);
+      if (!real) {
+        return Response.json({ error: "validation_failed", details: [`Product not found: ${item.product_id}`] }, { status: 400, headers: corsHeaders });
+      }
+      item.category_id = real.category_id;
+      item.lead_time_hours = real.lead_time_hours;
+      item.unit = real.unit;
+    }
 
     const check = validateCart(payload.items, payload.requested_delivery_date, now, cutoffPassed);
     if (!check.ok) {
-      return Response.json({ error: "validation_failed", details: check.errors }, { status: 400 });
+      return Response.json({ error: "validation_failed", details: check.errors }, { status: 400, headers: corsHeaders });
     }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { auth: { persistSession: false } },
-    );
 
     const groups = splitByCategory(payload.items);
     const created: string[] = [];
 
     for (const items of Object.values(groups)) {
-      const { data: order, error: oErr } = await supabase
-        .from("orders")
-        .insert({
-          shop_id: payload.shop_id,
-          submitted_by: payload.submitted_by,
-          status: "pending_request",
-          requested_delivery_date: payload.requested_delivery_date,
-        })
-        .select("id")
-        .single();
-      if (oErr) throw oErr;
+      const { data, error: rpcErr } = await admin.rpc("submit_request_atomic", {
+        p_shop_id: profile.shop_id,
+        p_submitted_by: user.id,
+        p_requested_delivery_date: payload.requested_delivery_date,
+        p_items: items,
+      });
 
-      for (const it of items) {
-        const { data: item, error: iErr } = await supabase
-          .from("order_items")
-          .insert({
-            order_id: order.id,
-            product_id: it.product_id,
-            quantity: it.quantity,
-            unit: it.unit,
-            custom_note: it.custom_note ?? null,
-          })
-          .select("id")
-          .single();
-        if (iErr) throw iErr;
-
-        for (const m of it.modifiers ?? []) {
-          const { error: mErr } = await supabase.from("order_item_modifiers").insert({
-            order_item_id: item.id,
-            modifier_option_id: m.modifier_option_id,
-            modifier_group_name: m.modifier_group_name,
-            modifier_option_name: m.modifier_option_name,
-          });
-          if (mErr) throw mErr;
-        }
+      if (rpcErr) throw rpcErr;
+      if (data && data.order_id) {
+        created.push(data.order_id);
       }
-      created.push(order.id);
     }
 
-    return Response.json({ ok: true, order_ids: created });
+    return Response.json({ ok: true, order_ids: created }, { headers: corsHeaders });
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
+    return Response.json({ error: "internal_server_error" }, { status: 500, headers: corsHeaders });
   }
 });

@@ -3,7 +3,7 @@ import { managersToWarn, tomorrowDate, type Manager } from "./lib.ts";
 
 Deno.test("tomorrowDate rolls to the next day", () => {
   assertEquals(tomorrowDate(new Date("2026-06-01T15:00:00Z")), "2026-06-02");
-  assertEquals(tomorrowDate(new Date("2026-06-30T23:00:00Z")), "2026-07-01");
+  assertEquals(tomorrowDate(new Date("2026-06-30T23:00:00Z")), "2026-07-02");
 });
 
 Deno.test("managersToWarn excludes shops already confirmed for tomorrow", () => {

@@ -9,5 +9,6 @@ BEGIN
   END IF;
 END $$;
 
-GRANT USAGE ON SCHEMA public, auth TO authenticated;
+GRANT USAGE ON SCHEMA public, auth TO authenticated, anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;

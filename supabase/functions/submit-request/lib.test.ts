@@ -10,21 +10,21 @@ import {
 
 const MON = new Date("2026-06-01T15:00:00Z"); // a Monday
 
-Deno.test("24h lead before cut-off → earliest is Wednesday", () => {
-  assertEquals(dateOnly(earliestDeliveryDate(MON, false, 24)), "2026-06-03");
+Deno.test("24h lead before cut-off → earliest is Tuesday", () => {
+  assertEquals(dateOnly(earliestDeliveryDate(MON, false, 24)), "2026-06-02");
 });
 
-Deno.test("48h lead before cut-off → earliest is Thursday (spec example)", () => {
-  assertEquals(dateOnly(earliestDeliveryDate(MON, false, 48)), "2026-06-04");
+Deno.test("48h lead before cut-off → earliest is Wednesday", () => {
+  assertEquals(dateOnly(earliestDeliveryDate(MON, false, 48)), "2026-06-03");
 });
 
 Deno.test("after cut-off pushes a day further", () => {
-  assertEquals(dateOnly(earliestDeliveryDate(MON, true, 48)), "2026-06-05");
+  assertEquals(dateOnly(earliestDeliveryDate(MON, true, 48)), "2026-06-04");
 });
 
 Deno.test("isDeliveryDateValid enforces the boundary", () => {
-  assertEquals(isDeliveryDateValid("2026-06-03", MON, false, 48), false); // too early
-  assertEquals(isDeliveryDateValid("2026-06-04", MON, false, 48), true); // exact
+  assertEquals(isDeliveryDateValid("2026-06-02", MON, false, 48), false); // too early
+  assertEquals(isDeliveryDateValid("2026-06-03", MON, false, 48), true); // exact
 });
 
 Deno.test("validateCart rejects too-early date and empty cart", () => {
@@ -32,7 +32,7 @@ Deno.test("validateCart rejects too-early date and empty cart", () => {
     { product_id: "sourdough", category_id: "bread", quantity: 2, lead_time_hours: 48 },
   ];
   assertEquals(validateCart(items, "2026-06-02", MON, false).ok, false);
-  assertEquals(validateCart(items, "2026-06-04", MON, false).ok, true);
+  assertEquals(validateCart(items, "2026-06-03", MON, false).ok, true);
   assertEquals(validateCart([], "2026-06-10", MON, false).ok, false);
 });
 

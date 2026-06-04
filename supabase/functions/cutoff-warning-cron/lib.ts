@@ -16,11 +16,15 @@ export const CONFIRMED_STATUSES = [
   "delivered",
 ];
 
-/** Tomorrow's delivery date (YYYY-MM-DD), UTC date arithmetic. */
-export function tomorrowDate(now: Date): string {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().slice(0, 10);
+/** Tomorrow's delivery date (YYYY-MM-DD) in London timezone. */
+export function tomorrowDate(now: Date, timezone = "Europe/London"): string {
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(tomorrow);
 }
 
 /**

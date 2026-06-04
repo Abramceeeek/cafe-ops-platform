@@ -9,7 +9,19 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CONFIRMED_STATUSES, managersToWarn, tomorrowDate, type Manager } from "./lib.ts";
 
-Deno.serve(async () => {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  if (req.method !== "POST") {
+    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
+  }
+
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -40,8 +52,8 @@ Deno.serve(async () => {
     // TODO(Stage E): dispatch FCM push to warn[].id here once tokens exist.
     console.log(`cutoff-warning: tomorrow=${tomorrow} warn=${warn.length}`);
 
-    return Response.json({ ok: true, tomorrow, warn_count: warn.length, warn: warn.map((m) => m.id) });
+    return Response.json({ ok: true, tomorrow, warn_count: warn.length, warn: warn.map((m) => m.id) }, { headers: corsHeaders });
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
+    return Response.json({ error: "internal_server_error" }, { status: 500, headers: corsHeaders });
   }
 });
