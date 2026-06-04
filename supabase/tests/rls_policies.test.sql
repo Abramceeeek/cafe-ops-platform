@@ -34,12 +34,12 @@ INSERT INTO products (id, category_id, name, unit, is_available) VALUES
   ('dddddddd-dddd-dddd-dddd-ddddddddddd1','cccccccc-cccc-cccc-cccc-ccccccccccc1','Lamb','kg',TRUE),
   ('dddddddd-dddd-dddd-dddd-ddddddddddd2','cccccccc-cccc-cccc-cccc-ccccccccccc1','Beef (86d)','kg',FALSE);
 
-INSERT INTO orders (shop_id, submitted_by, status, requested_delivery_date) VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','pending_request','2026-07-01'),
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','shop_confirmed','2026-07-01'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','pending_request','2026-07-01'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','ready_for_courier','2026-07-01'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','delivered','2026-07-01');
+INSERT INTO orders (shop_id, submitted_by, status, requested_delivery_date, assigned_courier) VALUES
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','pending_request','2026-07-01', NULL),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1','11111111-1111-1111-1111-111111111101','shop_confirmed','2026-07-01', NULL),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','pending_request','2026-07-01', NULL),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','ready_for_courier','2026-07-01', '33333333-3333-3333-3333-333333333301'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2','11111111-1111-1111-1111-111111111102','delivered','2026-07-01', '33333333-3333-3333-3333-333333333301');
 
 DO $$ DECLARE c int; BEGIN
   SELECT count(*) INTO c FROM orders;
