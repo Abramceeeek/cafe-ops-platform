@@ -44,6 +44,12 @@ interface CartLine {
   note: string;
 }
 
+// Which Hub specialist receives each category (routing per the live model).
+function specialistFor(categoryName: string): string {
+  if (/meat|smoked/i.test(categoryName)) return "Pitmaster";
+  return "Baker"; // Kitchen Bread + Pastry / Retail Bakery
+}
+
 function earliestDate(now: Date, maxLeadHours: number): string {
   const londonHour = Number(
     new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now),
@@ -67,6 +73,7 @@ export default function NewRequestPage() {
   const [serverNow, setServerNow] = useState<Date>(new Date());
 
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [filterCat, setFilterCat] = useState<string | null>(null);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -140,6 +147,9 @@ export default function NewRequestPage() {
     [cart],
   );
   const minDate = earliestDate(serverNow, maxLead);
+
+  // only categories the role can actually order from (products are RLS-scoped, categories are not)
+  const visibleCats = categories.filter((c) => products.some((p) => p.category_id === c.id));
 
   async function submit() {
     if (!shopId || !userId) return toast.error("Your profile has no shop assigned.");
@@ -217,11 +227,35 @@ export default function NewRequestPage() {
     <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_340px]">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">New Request</h1>
-          <p className="text-sm text-muted-foreground">Browse the catalog and build your request.</p>
+          <h1 className="font-display text-2xl tracking-tight">New Request</h1>
+          <p className="text-sm text-muted-foreground">Browse your catalog and build your request.</p>
         </div>
 
-        {categories.map((cat) => {
+        {visibleCats.length > 1 && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFilterCat(null)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                filterCat === null ? "border-primary bg-primary text-primary-foreground" : "bg-card text-foreground"
+              }`}
+            >
+              All
+            </button>
+            {visibleCats.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setFilterCat(cat.id)}
+                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filterCat === cat.id ? "border-primary bg-primary text-primary-foreground" : "bg-card text-foreground"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {visibleCats.filter((c) => !filterCat || c.id === filterCat).map((cat) => {
           const items = products.filter((p) => p.category_id === cat.id);
           if (items.length === 0) return null;
           return (
@@ -262,30 +296,62 @@ export default function NewRequestPage() {
             {cart.length === 0 && (
               <p className="text-sm text-muted-foreground">No items yet.</p>
             )}
-            {cart.map((l) => (
-              <div key={l.key} className="flex items-start justify-between gap-2 border-b pb-2 text-sm">
-                <div>
-                  <div className="font-medium">
-                    {l.product.name} × {l.quantity} {l.product.unit}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {Object.entries(l.selected)
-                      .map(([, oid]) => options.find((o) => o.id === oid)?.name)
-                      .filter(Boolean)
-                      .join(" · ")}
-                    {l.note ? ` — ${l.note}` : ""}
-                  </div>
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => setCart((c) => c.filter((x) => x.key !== l.key))}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
+
+            {(() => {
+              const catIds = Array.from(new Set(cart.map((l) => l.product.category_id)));
+              return (
+                <>
+                  {catIds.length >= 2 && (
+                    <div
+                      className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs"
+                      style={{ background: "var(--accent)", borderColor: "var(--st-pend-line)", color: "var(--ink-2)" }}
+                    >
+                      <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: "var(--primary)" }} />
+                      <span>
+                        This cart spans {catIds.length} categories — it&apos;ll submit as{" "}
+                        <strong>{catIds.length} orders</strong>, one per Hub specialist.
+                      </span>
+                    </div>
+                  )}
+                  {catIds.map((cid) => {
+                    const catName = categories.find((c) => c.id === cid)?.name ?? "Items";
+                    const lines = cart.filter((l) => l.product.category_id === cid);
+                    return (
+                      <div key={cid} className="space-y-1.5">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm font-bold">{catName}</span>
+                          <span className="font-mono text-xs text-muted-foreground">→ {specialistFor(catName)}</span>
+                        </div>
+                        {lines.map((l) => (
+                          <div key={l.key} className="flex items-start justify-between gap-2 border-b pb-2 text-sm">
+                            <div>
+                              <div className="font-medium">
+                                {l.product.name} × {l.quantity} {l.product.unit}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {Object.entries(l.selected)
+                                  .map(([, oid]) => options.find((o) => o.id === oid)?.name)
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                                {l.note ? ` — ${l.note}` : ""}
+                              </div>
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => setCart((c) => c.filter((x) => x.key !== l.key))}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </>
+              );
+            })()}
 
             <div className="space-y-2">
               <Label htmlFor="ddate">Delivery date</Label>
