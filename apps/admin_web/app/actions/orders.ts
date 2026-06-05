@@ -187,11 +187,25 @@ export async function submitOrder(payload: Payload) {
     return { error: "validation_failed", details: errors };
   }
 
-  const groups = splitByCategory(payload.items);
-  const created: string[] = [];
+  const groups = Object.values(splitByCategory(payload.items));
 
-  for (const items of Object.values(groups)) {
-    // Phase 1 / Phase 3: Rip out the SQL RPC, insert atomically via Supabase Service Client
+  // Atomic path (migration 0022): create every order/item/modifier in ONE transaction.
+  const { data: rpcRes, error: rpcErr } = await admin.rpc("submit_request_atomic", {
+    p_shop_id: profile.shop_id,
+    p_submitted_by: user.id,
+    p_requested_delivery_date: payload.requested_delivery_date,
+    p_groups: groups,
+  });
+  if (!rpcErr) {
+    return { ok: true, order_ids: (rpcRes as { order_ids?: string[] } | null)?.order_ids ?? [] };
+  }
+  // Fallback (non-atomic) only when the RPC isn't applied to this environment yet.
+  if (rpcErr.code !== "PGRST202" && !/submit_request_atomic/.test(rpcErr.message ?? "")) {
+    return { error: "internal_server_error", details: rpcErr.message };
+  }
+
+  const created: string[] = [];
+  for (const items of groups) {
     const { data: order, error: oErr } = await admin
       .from("orders")
       .insert({

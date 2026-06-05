@@ -1,15 +1,21 @@
-// End-to-end UAT against the LIVE backend with the real role logins.
-// Drives a full Two-Way Handshake + lifecycle on real catalog data and checks
-// the Edge Functions, role gates, and receipt generation.
-// Run: node scripts/uat.mjs  (needs SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)
+// Live RLS + security checks against the deployed backend with the real @bobo.wild
+// logins. The order lifecycle now runs through Next.js server actions (not Edge
+// Functions), so it is exercised by the manual UAT (docs/UAT_SCRIPT.md). This harness
+// proves the security gate that protects everything: role-scoped catalog visibility,
+// cross-shop read isolation, direct-write denial, and the locked-down submit RPC.
+//
+// Run (PowerShell, env sourced from keys.txt):
+//   $env:SUPABASE_URL=...; $env:SUPABASE_ANON_KEY=...; $env:SUPABASE_SERVICE_ROLE_KEY=...
+//   $env:STAFF_PASSWORD='Bobo&wild2026'; node scripts/uat.mjs
 import { createClient } from "@supabase/supabase-js";
 
 const URL = process.env.SUPABASE_URL;
 const ANON = process.env.SUPABASE_ANON_KEY;
 const SR = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const PW = "Hubsync123!";
-const admin = createClient(URL, SR, { auth: { persistSession: false } });
+const PW = process.env.STAFF_PASSWORD || "Bobo&wild2026";
+if (!URL || !ANON || !SR) { console.error("Need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY"); process.exit(1); }
 
+const admin = createClient(URL, SR, { auth: { persistSession: false } });
 let pass = 0, fail = 0;
 const check = (name, ok, extra = "") => { console.log(`${ok ? "PASS" : "FAIL"}  ${name}${extra ? " — " + extra : ""}`); ok ? pass++ : fail++; };
 
@@ -19,112 +25,43 @@ async function client(email) {
   if (error) throw new Error(`signIn ${email}: ${error.message}`);
   return c;
 }
-const invoke = (c, fn, body) => c.functions.invoke(fn, { body });
+const cats = async (c) => {
+  const { data } = await c.from("products").select("product_categories(name)");
+  return [...new Set((data ?? []).map((p) => p.product_categories?.name))].sort();
+};
 
-// ── setup: ids ──
-const { data: prods } = await admin
-  .from("products")
-  .select("id, name, unit, lead_time_hours, category_id, product_categories(assigned_role)");
-const bread = prods.find((p) => p.name === "Sourdough Bread");
-const meat = prods.find((p) => p.name === "Smoked Lamb");
-check("real catalog present (Sourdough + Smoked Lamb)", !!bread && !!meat);
+// ── 1. Role-scoped catalog visibility ──
+const boh = await client("boh.clapham@bobo.wild");
+const foh = await client("foh.clapham@bobo.wild");
+const pit = await client("pitmaster@bobo.wild");
 
-const foh = await client("foh.shopa@hubsync.test");
-const { data: { user: fohUser } } = await foh.auth.getUser();
-const { data: fohProfile } = await foh.from("profiles").select("shop_id").eq("id", fohUser.id).single();
+const bohCats = await cats(boh);
+check("BOH sees only Bread + Meat", JSON.stringify(bohCats) === JSON.stringify(["Kitchen Bread", "Smoked / Meat / Prep"]), bohCats.join(", "));
+const fohCats = await cats(foh);
+check("FOH sees only Pastry / Retail", JSON.stringify(fohCats) === JSON.stringify(["Pastry / Retail Bakery"]), fohCats.join(", "));
+const pitCats = await cats(pit);
+check("Pitmaster (specialist) sees all categories", pitCats.length === 3, pitCats.join(", "));
 
-const date = new Date(Date.now() + 6 * 86400000).toISOString().slice(0, 10);
-const mkItem = (p) => ({
-  product_id: p.id, category_id: p.category_id, quantity: 2,
-  lead_time_hours: p.lead_time_hours, unit: p.unit,
-  modifiers: [],
-});
+// ── 2. Cross-shop read isolation ──
+const { data: clapShop } = await admin.from("shops").select("id").eq("name", "Clapham").single();
+const { data: fohOrders } = await foh.from("orders").select("id, shop_id");
+const leak = (fohOrders ?? []).filter((o) => o.shop_id !== clapShop.id);
+check("FOH sees no other shop's orders", leak.length === 0, `leaked ${leak.length}`);
 
-// ── 1. submit multi-category cart → 2 orders ──
-const { data: sub, error: subErr } = await invoke(foh, "submit-request", {
-  shop_id: fohProfile.shop_id, submitted_by: fohUser.id,
-  requested_delivery_date: date, items: [mkItem(bread), mkItem(meat)],
-});
-check("submit-request ok", !subErr, subErr?.message);
-const orderIds = sub?.order_ids ?? [];
-check("multi-category cart split into 2 orders", orderIds.length === 2, `got ${orderIds.length}`);
+// ── 3. Direct write is denied (mutations must go through the server action) ──
+const productId = (await admin.from("products").select("id").limit(1).single()).data.id;
+const ins = await foh.from("orders").insert({ shop_id: clapShop.id, submitted_by: (await foh.auth.getUser()).data.user.id, status: "pending_request", requested_delivery_date: "2030-01-01" }).select("id");
+check("Direct client INSERT into orders is blocked by RLS", !!ins.error || (ins.data?.length ?? 0) === 0, ins.error?.message ?? "row inserted!");
 
-// classify orders by category
-const orders = {};
-for (const id of orderIds) {
-  const { data: o } = await admin.from("orders").select("id, order_items(products(product_categories(assigned_role)))").eq("id", id).single();
-  const role = o.order_items[0]?.products?.product_categories?.assigned_role;
-  orders[role] = id;
-}
-check("one order per specialist (bread_baker + meat_specialist)", !!orders.bread_baker && !!orders.meat_specialist);
-
-// ── 2. specialists approve their own ──
-const meatC = await client("meat@hubsync.test");
-const breadC = await client("bread@hubsync.test");
-const { error: aprMeat } = await invoke(meatC, "order-state-change", { order_id: orders.meat_specialist, new_status: "specialist_approved" });
-check("meat specialist approves meat order", !aprMeat, aprMeat?.message);
-// role gate: meat specialist must NOT be able to approve as a shop confirm
-const { error: badGate } = await invoke(meatC, "order-state-change", { order_id: orders.meat_specialist, new_status: "shop_confirmed" });
-check("role gate blocks specialist doing shop_confirmed", !!badGate);
-const { error: aprBread } = await invoke(breadC, "order-state-change", { order_id: orders.bread_baker, new_status: "specialist_approved" });
-check("bread baker approves bread order", !aprBread, aprBread?.message);
-
-// ── 3. shop final-confirms both ──
-for (const id of orderIds) {
-  const { error } = await invoke(foh, "order-state-change", { order_id: id, new_status: "shop_confirmed" });
-  check(`shop final-confirm ${id.slice(0, 8)}`, !error, error?.message);
+const anyOrder = (await admin.from("orders").select("id").limit(1).maybeSingle()).data;
+if (anyOrder) {
+  const upd = await foh.from("orders").update({ status: "delivered" }).eq("id", anyOrder.id).select("id");
+  check("Direct client UPDATE of order status is blocked by RLS", (upd.data?.length ?? 0) === 0, upd.error?.message ?? "");
 }
 
-// ── 4. production on the meat order ──
-for (const s of ["in_progress", "packaged", "ready_for_courier"]) {
-  const { error } = await invoke(meatC, "order-state-change", { order_id: orders.meat_specialist, new_status: s });
-  check(`meat order → ${s}`, !error, error?.message);
-}
-
-// invalid transition guard
-const { error: invalid } = await invoke(meatC, "order-state-change", { order_id: orders.meat_specialist, new_status: "delivered" });
-check("invalid transition (ready → delivered by specialist) rejected", !!invalid);
-
-// ── 5. courier pickup, shop receipt ──
-const courierC = await client("courier@hubsync.test");
-const { error: transit } = await invoke(courierC, "order-state-change", { order_id: orders.meat_specialist, new_status: "in_transit" });
-check("courier → in_transit", !transit, transit?.message);
-const { error: delivered } = await invoke(foh, "order-state-change", { order_id: orders.meat_specialist, new_status: "delivered" });
-check("shop confirm receipt → delivered", !delivered, delivered?.message);
-
-// ── 6. receipt generated (client-triggered after delivery) ──
-const { error: rcptErr } = await invoke(foh, "generate-receipt", { order_id: orders.meat_specialist });
-check("generate-receipt invoked", !rcptErr, rcptErr?.message);
-await new Promise((r) => setTimeout(r, 1500));
-const { data: receipt } = await admin.from("receipts").select("id, pdf_storage_path").eq("order_id", orders.meat_specialist).maybeSingle();
-check("receipt PDF generated on delivery", !!receipt, receipt?.pdf_storage_path);
-
-// ── 7. order templates (3.2) + RLS scoping ──
-const { data: tmpl, error: tErr } = await foh
-  .from("order_templates")
-  .insert({ shop_id: fohProfile.shop_id, created_by: fohUser.id, name: "UAT Template", role: "foh_manager" })
-  .select("id")
-  .single();
-check("save template", !tErr && !!tmpl, tErr?.message);
-if (tmpl) await foh.from("order_template_items").insert({ template_id: tmpl.id, product_id: bread.id, quantity: 3 });
-
-const { data: own } = await foh.from("order_templates").select("id").eq("id", tmpl?.id ?? "");
-check("owner sees own template", (own?.length ?? 0) === 1);
-
-// cross-role negative control: a specialist (no shop, other role) sees zero templates
-const { data: meatSees } = await meatC.from("order_templates").select("id");
-check("RLS: specialist sees 0 shop templates", (meatSees?.length ?? 0) === 0, `saw ${meatSees?.length ?? 0}`);
-
-// order now from the template — full server-side validation still applies
-const date2 = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-const { data: tOrder, error: toErr } = await invoke(foh, "submit-request", {
-  shop_id: fohProfile.shop_id, submitted_by: fohUser.id, requested_delivery_date: date2,
-  items: [mkItem(bread)],
-});
-check("order from template submits", !toErr, toErr?.message);
-check("template order created", (tOrder?.order_ids?.length ?? 0) === 1);
-
-if (tmpl) await foh.from("order_templates").delete().eq("id", tmpl.id); // cleanup
+// ── 4. submit_request_atomic is not callable by end users ──
+const rpc = await foh.rpc("submit_request_atomic", { p_shop_id: clapShop.id, p_submitted_by: (await foh.auth.getUser()).data.user.id, p_requested_delivery_date: "2030-01-01", p_groups: [[{ product_id: productId, quantity: 1, unit: "item", modifiers: [] }]] });
+check("submit_request_atomic blocked for end users", !!rpc.error, rpc.error?.message ?? "callable!");
 
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);
