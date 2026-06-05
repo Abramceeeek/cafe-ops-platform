@@ -20,7 +20,6 @@ const users = [
   { email: "kitchen.shopa@hubsync.test", full_name: "Kitchen Manager (Shop A)", role: "kitchen_manager", shop: "Shop A - Soho" },
   { email: "meat@hubsync.test",          full_name: "Meat Specialist",          role: "meat_specialist", shop: null },
   { email: "bread@hubsync.test",         full_name: "Bread Baker",              role: "bread_baker",     shop: null },
-  { email: "pastry@hubsync.test",        full_name: "Pastry Chef",              role: "pastry_chef",     shop: null },
   { email: "courier@hubsync.test",       full_name: "Courier",                  role: "courier",         shop: null },
 ];
 

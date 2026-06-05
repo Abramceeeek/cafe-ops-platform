@@ -26,7 +26,7 @@ if (!url || !serviceKey) {
 
 const ROLES = new Set([
   "foh_manager", "kitchen_manager", "meat_specialist",
-  "bread_baker", "pastry_chef", "courier", "admin",
+  "bread_baker", "courier", "admin",
 ]);
 const SHOP_ROLES = new Set(["foh_manager", "kitchen_manager"]);
 
