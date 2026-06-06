@@ -4,6 +4,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+import { earliestDate } from "@/lib/utils";
 
 export interface CartItem {
   product_id: string;
@@ -25,21 +26,8 @@ export interface Payload {
   items: CartItem[];
 }
 
-// Validation logic ported from submit-request Edge Function
-function earliestDeliveryDate(now: Date, cutoffPassed: boolean, leadTimeHours: number): Date {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const leadDays = Math.max(1, Math.ceil(leadTimeHours / 24));
-  const penalty = cutoffPassed ? 1 : 0;
-  d.setUTCDate(d.getUTCDate() + leadDays + penalty);
-  return d;
-}
-
-function dateOnly(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 function isDeliveryDateValid(requested: string, now: Date, cutoffPassed: boolean, leadTimeHours: number): boolean {
-  return requested >= dateOnly(earliestDeliveryDate(now, cutoffPassed, leadTimeHours));
+  return requested >= earliestDate(now, leadTimeHours, cutoffPassed);
 }
 
 function splitByCategory(items: CartItem[]): Record<string, CartItem[]> {
@@ -179,7 +167,7 @@ export async function submitOrder(payload: Payload) {
   for (const it of payload.items) {
     if (it.quantity <= 0) errors.push(`Quantity must be positive for ${it.product_id}.`);
     if (!isDeliveryDateValid(payload.requested_delivery_date, now, cutoffPassed, it.lead_time_hours)) {
-      errors.push(`${it.product_id} needs ${it.lead_time_hours}h lead time; earliest delivery ${dateOnly(earliestDeliveryDate(now, cutoffPassed, it.lead_time_hours))}.`);
+      errors.push(`${it.product_id} needs ${it.lead_time_hours}h lead time; earliest delivery ${earliestDate(now, it.lead_time_hours, cutoffPassed)}.`);
     }
   }
 
@@ -251,13 +239,13 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 };
 
 const TRANSITION_ROLES: Record<string, string[]> = {
-  specialist_approved: ["meat_specialist", "bread_baker", "admin"],
-  rejected: ["meat_specialist", "bread_baker", "admin"],
+  specialist_approved: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
+  rejected: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   shop_confirmed: ["foh_manager", "kitchen_manager", "admin"],
   cancelled: ["foh_manager", "kitchen_manager", "admin"],
-  in_progress: ["meat_specialist", "bread_baker", "admin"],
-  packaged: ["meat_specialist", "bread_baker", "admin"],
-  ready_for_courier: ["meat_specialist", "bread_baker", "admin"],
+  in_progress: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
+  packaged: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
+  ready_for_courier: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   in_transit: ["courier", "admin"],
   delivered: ["foh_manager", "kitchen_manager", "admin"],
 };
@@ -265,6 +253,7 @@ const TRANSITION_ROLES: Record<string, string[]> = {
 const STATUS_TIMESTAMP: Record<string, string> = {
   specialist_approved: "specialist_approved_at",
   shop_confirmed: "shop_confirmed_at",
+  in_progress: "in_progress_at",
   packaged: "packaged_at",
   ready_for_courier: "ready_at",
   delivered: "delivered_at",
@@ -278,7 +267,12 @@ function roleAllowed(to: string, role: string): boolean {
   return (TRANSITION_ROLES[to] ?? []).includes(role);
 }
 
-export async function updateOrderStatus(payload: { order_id: string; new_status: string; signature_data?: string }) {
+export async function updateOrderStatus(payload: {
+  order_id: string;
+  new_status: string;
+  signature_data?: string;
+  item_costs?: { id: string; unit_cost: number }[];
+}) {
   const cookieStore = await cookies();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -336,6 +330,19 @@ export async function updateOrderStatus(payload: { order_id: string; new_status:
     if (order.assigned_courier !== user.id) return { error: "not_assigned_courier" };
   }
 
+  // Approve & Quote: the specialist sets each line's unit cost as they approve
+  // (§ order_items.unit_cost). Write costs before flipping the status.
+  if (payload.new_status === "specialist_approved" && payload.item_costs?.length) {
+    for (const c of payload.item_costs) {
+      const { error: cErr } = await admin
+        .from("order_items")
+        .update({ unit_cost: c.unit_cost })
+        .eq("id", c.id)
+        .eq("order_id", payload.order_id);
+      if (cErr) return { error: "internal_server_error", details: cErr.message };
+    }
+  }
+
   const patch: Record<string, unknown> = { status: payload.new_status };
   const tsCol = STATUS_TIMESTAMP[payload.new_status];
   if (tsCol) patch[tsCol] = new Date().toISOString();
@@ -361,7 +368,7 @@ export async function updateOrderStatus(payload: { order_id: string; new_status:
   if (uErr) return { error: "internal_server_error", details: uErr.message };
   if (!updated) return { error: "concurrent_modification" };
 
-  if (payload.new_status === "specialist_approved" && patch.assigned_courier) {
+  if (payload.new_status === "shop_confirmed" && order.assigned_courier) {
     const courierId = patch.assigned_courier as string;
     const deliveryDate = order.requested_delivery_date;
     const shopId = order.shop_id;
@@ -431,6 +438,11 @@ export async function updateOrderStatus(payload: { order_id: string; new_status:
         .eq("manifest_id", manifest.id)
         .eq("shop_id", order.shop_id);
     }
+
+    // Call generate-receipt
+    await userClient.functions.invoke("generate-receipt", {
+      body: { order_id: payload.order_id },
+    });
   }
 
   return { ok: true, from, to: payload.new_status };

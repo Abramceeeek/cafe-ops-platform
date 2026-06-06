@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { Trash2, Clock, ShoppingCart } from "lucide-react";
+import { Trash2, Clock, Send, Plus, ListChecks, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { submitOrder } from "@/app/actions/orders";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,7 @@ interface TemplateItem {
     unit: string;
     category_id: string;
     lead_time_hours: number;
+    product_categories: { name: string } | null;
   } | null; // null when the product is 86'd (hidden by RLS)
   order_template_item_modifiers: TemplateModifier[];
 }
@@ -41,16 +42,7 @@ interface Template {
   order_template_items: TemplateItem[];
 }
 
-function earliestDate(now: Date, maxLeadHours: number): string {
-  const londonHour = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now),
-  );
-  const cutoffPassed = londonHour >= 16;
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() + (cutoffPassed ? 2 : 1));
-  d.setUTCHours(d.getUTCHours() + maxLeadHours);
-  return d.toISOString().slice(0, 10);
-}
+import { earliestDate } from "@/lib/utils";
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -76,7 +68,7 @@ export default function TemplatesPage() {
           `id, name,
            order_template_items (
              id, quantity, custom_note,
-             products ( id, name, unit, category_id, lead_time_hours ),
+             products ( id, name, unit, category_id, lead_time_hours, product_categories ( name ) ),
              order_template_item_modifiers (
                modifier_option_id,
                modifier_options ( name, modifier_groups ( name ) )
@@ -99,10 +91,17 @@ export default function TemplatesPage() {
     void load();
   }, [load]);
 
-  const itemSummary = (t: Template) =>
-    t.order_template_items
-      .map((i) => (i.products ? `${i.products.name} ×${i.quantity}` : "(unavailable item)"))
-      .join(", ");
+  const meta = (t: Template) => {
+    const cats = Array.from(
+      new Set(
+        t.order_template_items
+          .map((i) => i.products?.product_categories?.name)
+          .filter(Boolean) as string[],
+      ),
+    );
+    const unavailable = t.order_template_items.filter((i) => !i.products).length;
+    return { count: t.order_template_items.length, cats, unavailable };
+  };
 
   const activeMaxLead = useMemo(
     () =>
@@ -120,6 +119,7 @@ export default function TemplatesPage() {
   }
 
   async function deleteTemplate(id: string) {
+    if (!confirm("Are you sure you want to delete this template?")) return;
     const { error } = await createClient().from("order_templates").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Template deleted.");
@@ -160,38 +160,87 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
-        <p className="text-sm text-muted-foreground">Reorder your saved standard orders in one tap.</p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between px-0.5 pt-1">
+        <h1 className="font-display text-2xl">My Templates</h1>
+        <Link
+          href="/request"
+          aria-label="New template"
+          className="grid h-9 w-9 place-items-center text-primary"
+        >
+          <Plus className="h-[22px] w-[22px]" />
+        </Link>
       </div>
 
+      <p className="px-0.5 text-[13px] leading-relaxed text-muted-foreground">
+        Saved carts for your role. <span className="font-semibold text-foreground/80">Order Now</span>{" "}
+        re-checks lead times &amp; the 4 PM cut-off, then submits.
+      </p>
+
+      {loading && <p className="px-0.5 text-sm text-muted-foreground">Loading…</p>}
+
       {!loading && templates.length === 0 && (
-        <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            No templates yet — save one from New Request.
-          </CardContent>
-        </Card>
+        <div className="rounded-2xl border bg-card py-10 text-center text-sm text-muted-foreground">
+          No templates yet — save one from New Request.
+        </div>
       )}
 
-      {templates.map((t) => (
-        <Card key={t.id}>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base">{t.name}</CardTitle>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => openOrder(t)}>
-                <ShoppingCart className="h-4 w-4" /> Order Now
-              </Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => void deleteTemplate(t.id)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
+      {templates.map((t) => {
+        const m = meta(t);
+        return (
+          <div key={t.id} className="rounded-2xl border bg-card p-4">
+            <div className="flex items-start gap-3">
+              <div className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl border border-accent bg-accent text-accent-foreground">
+                <ListChecks className="h-[21px] w-[21px]" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px] font-bold leading-tight">{t.name}</div>
+                <div className="mt-0.5 text-[12.5px] text-muted-foreground">
+                  {m.count} item{m.count !== 1 ? "s" : ""}
+                  {m.cats.length > 0 ? ` · ${m.cats.join(" · ")}` : ""}
+                </div>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">{itemSummary(t)}</p>
-          </CardContent>
-        </Card>
-      ))}
+
+            {m.unavailable > 0 && (
+              <div
+                className="mt-3 flex items-center gap-2 rounded-lg border p-2.5"
+                style={{ background: "var(--st-pend-bg)", borderColor: "var(--st-pend-line)" }}
+              >
+                <TriangleAlert className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--st-pend)" }} />
+                <span className="text-xs text-foreground/80">
+                  {m.unavailable} item{m.unavailable !== 1 ? "s" : ""} currently unavailable — excluded on order.
+                </span>
+              </div>
+            )}
+
+            <div className="mt-3 flex gap-2.5">
+              <button
+                onClick={() => openOrder(t)}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
+              >
+                <Send className="h-4 w-4" /> Order Now
+              </button>
+              <button
+                onClick={() => void deleteTemplate(t.id)}
+                aria-label="Delete template"
+                className="grid shrink-0 place-items-center rounded-xl border border-input px-4 text-muted-foreground transition hover:text-foreground"
+              >
+                <Trash2 className="h-[17px] w-[17px]" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      {!loading && templates.length > 0 && (
+        <Link
+          href="/request"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-semibold text-accent-foreground transition hover:brightness-[0.98]"
+        >
+          <Plus className="h-[17px] w-[17px]" /> New template from a cart
+        </Link>
+      )}
 
       <Dialog open={active != null} onOpenChange={(o) => !o && setActive(null)}>
         <DialogContent>

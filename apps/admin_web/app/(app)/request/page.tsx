@@ -2,14 +2,25 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Clock } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Clock,
+  ChevronRight,
+  Send,
+  Minus,
+  Check,
+  Croissant,
+  Wheat,
+  Beef,
+  Package,
+  type LucideIcon,
+} from "lucide-react";
 import { submitOrder } from "@/app/actions/orders";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -18,13 +29,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 interface Category { id: string; name: string }
 interface Product {
@@ -44,16 +48,14 @@ interface CartLine {
   note: string;
 }
 
-function earliestDate(now: Date, maxLeadHours: number): string {
-  const londonHour = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now),
-  );
-  const cutoffPassed = londonHour >= 16;
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const leadDays = Math.max(1, Math.ceil(maxLeadHours / 24));
-  const penalty = cutoffPassed ? 1 : 0;
-  d.setUTCDate(d.getUTCDate() + leadDays + penalty);
-  return d.toISOString().slice(0, 10);
+import { earliestDate } from "@/lib/utils";
+
+function categoryIcon(cat: string): LucideIcon {
+  const c = cat.toLowerCase();
+  if (c.includes("meat") || c.includes("smoked") || c.includes("prep")) return Beef;
+  if (c.includes("bread")) return Wheat;
+  if (c.includes("pastry") || c.includes("retail") || c.includes("cookie") || c.includes("cake")) return Croissant;
+  return Package;
 }
 
 export default function NewRequestPage() {
@@ -159,16 +161,21 @@ export default function NewRequestPage() {
         modifier_option_name: options.find((o) => o.id === oid)?.name ?? "",
       })),
     }));
-    const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, items });
-    setSubmitting(false);
-    if (response.error) {
-      const details = Array.isArray(response.details) ? ": " + response.details.join(", ") : (response.details ? ": " + response.details : "");
-      return toast.error(response.error + details);
+    try {
+      const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, items });
+      if (response.error) {
+        const details = Array.isArray(response.details) ? ": " + response.details.join(", ") : (response.details ? ": " + response.details : "");
+        return toast.error(response.error + details);
+      }
+      const ids = response.order_ids ?? [];
+      toast.success(`Request submitted — ${ids.length} order(s) created.`);
+      setCart([]);
+      setDeliveryDate("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Submit failed — try again.");
+    } finally {
+      setSubmitting(false);
     }
-    const ids = response.order_ids ?? [];
-    toast.success(`Request submitted — ${ids.length} order(s) created.`);
-    setCart([]);
-    setDeliveryDate("");
   }
 
   async function saveTemplate() {
@@ -178,35 +185,24 @@ export default function NewRequestPage() {
     if (!name) return toast.error("Name the template.");
     setSavingTemplate(true);
     const supabase = createClient();
-    const { data: t, error: tErr } = await supabase
-      .from("order_templates")
-      .insert({ shop_id: shopId, created_by: userId, name, role })
-      .select("id")
-      .single();
-    if (tErr || !t) {
+    const itemsPayload = cart.map(l => ({
+      product_id: l.product.id,
+      quantity: l.quantity,
+      custom_note: l.note || null,
+      modifiers: Object.values(l.selected).map(oid => ({ modifier_option_id: oid }))
+    }));
+
+    const { error: rpcErr } = await supabase.rpc("save_order_template", {
+      p_shop_id: shopId,
+      p_created_by: userId,
+      p_name: name,
+      p_role: role,
+      p_items: itemsPayload
+    });
+
+    if (rpcErr) {
       setSavingTemplate(false);
-      return toast.error(tErr?.message ?? "Could not save template.");
-    }
-    for (const l of cart) {
-      const { data: item, error: iErr } = await supabase
-        .from("order_template_items")
-        .insert({ template_id: t.id, product_id: l.product.id, quantity: l.quantity, custom_note: l.note || null })
-        .select("id")
-        .single();
-      if (iErr || !item) {
-        setSavingTemplate(false);
-        return toast.error(iErr?.message ?? "Could not save template items.");
-      }
-      const modIds = Object.values(l.selected);
-      if (modIds.length > 0) {
-        const { error: mErr } = await supabase
-          .from("order_template_item_modifiers")
-          .insert(modIds.map((oid) => ({ template_item_id: item.id, modifier_option_id: oid })));
-        if (mErr) {
-          setSavingTemplate(false);
-          return toast.error(mErr.message);
-        }
-      }
+      return toast.error(rpcErr.message);
     }
     setSavingTemplate(false);
     setTemplateName("");
@@ -214,175 +210,268 @@ export default function NewRequestPage() {
   }
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_340px]">
-      <div className="space-y-6">
+    <div className="space-y-5 pb-4">
+      <div className="flex items-end justify-between px-0.5 pt-1">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">New Request</h1>
+          <h1 className="font-display text-2xl">New Request</h1>
           <p className="text-sm text-muted-foreground">Browse the catalog and build your request.</p>
         </div>
-
-        {categories.map((cat) => {
-          const items = products.filter((p) => p.category_id === cat.id);
-          if (items.length === 0) return null;
-          return (
-            <Card key={cat.id}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">{cat.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-2 sm:grid-cols-2">
-                {items.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div>
-                      <div className="text-sm font-medium">{p.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        per {p.unit} · {p.lead_time_hours}h lead
-                      </div>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => openProduct(p)}>
-                      <Plus className="h-4 w-4" /> Add
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          );
-        })}
+        <span
+          className="font-mono text-sm font-bold"
+          style={{ color: cart.length ? "var(--primary)" : "var(--muted-foreground)" }}
+        >
+          {cart.length} item{cart.length !== 1 ? "s" : ""}
+        </span>
       </div>
+
+      {/* Catalog */}
+      {categories.map((cat) => {
+        const items = products.filter((p) => p.category_id === cat.id);
+        if (items.length === 0) return null;
+        const Icon = categoryIcon(cat.name);
+        return (
+          <div key={cat.id} className="space-y-2">
+            <div className="px-0.5 text-[11px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">
+              {cat.name} · {items.length} products
+            </div>
+            <div className="overflow-hidden rounded-2xl border bg-card">
+              {items.map((p, i) => {
+                const mods = productGroups(p.id).length;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => openProduct(p)}
+                    className={
+                      "flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-secondary/50 " +
+                      (i < items.length - 1 ? "border-b border-border" : "")
+                    }
+                  >
+                    <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-secondary text-foreground/70">
+                      <Icon className="h-[20px] w-[20px]" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold">{p.name}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        per {p.unit} · {p.lead_time_hours}h lead
+                        {mods ? ` · ${mods} option${mods > 1 ? "s" : ""}` : ""}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-[18px] w-[18px] shrink-0 text-muted-foreground/60" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
 
       {/* Cart */}
-      <div className="lg:sticky lg:top-6 lg:self-start">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Cart ({cart.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {cart.length === 0 && (
-              <p className="text-sm text-muted-foreground">No items yet.</p>
-            )}
-            {cart.map((l) => (
-              <div key={l.key} className="flex items-start justify-between gap-2 border-b pb-2 text-sm">
-                <div>
-                  <div className="font-medium">
-                    {l.product.name} × {l.quantity} {l.product.unit}
+      <div className="rounded-2xl border bg-card p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="font-display text-lg">Your Cart</span>
+          <span className="text-[13px] font-semibold text-muted-foreground">
+            {cart.length} line{cart.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+
+        {cart.length === 0 ? (
+          <p className="py-2 text-sm text-muted-foreground">No items yet — tap a product above.</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {cart.map((l) => {
+              const CatIcon = categoryIcon(
+                categories.find((c) => c.id === l.product.category_id)?.name ?? "",
+              );
+              return (
+                <div key={l.key} className="flex items-start gap-3 py-3">
+                  <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
+                    <CatIcon className="h-[18px] w-[18px]" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-bold">{l.product.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {Object.entries(l.selected)
+                        .map(([, oid]) => options.find((o) => o.id === oid)?.name)
+                        .filter(Boolean)
+                        .join(" · ") || "No options"}
+                      {l.note ? ` — ${l.note}` : ""}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {Object.entries(l.selected)
-                      .map(([, oid]) => options.find((o) => o.id === oid)?.name)
-                      .filter(Boolean)
-                      .join(" · ")}
-                    {l.note ? ` — ${l.note}` : ""}
-                  </div>
+                  <span className="shrink-0 font-mono text-[13.5px] font-bold">
+                    {l.quantity} {l.product.unit}
+                  </span>
+                  <button
+                    onClick={() => setCart((c) => c.filter((x) => x.key !== l.key))}
+                    aria-label="Remove"
+                    className="shrink-0 text-muted-foreground transition hover:text-foreground"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7"
-                  onClick={() => setCart((c) => c.filter((x) => x.key !== l.key))}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+        )}
 
-            <div className="space-y-2">
-              <Label htmlFor="ddate">Delivery date</Label>
-              <Input
-                id="ddate"
-                type="date"
-                min={minDate}
-                value={deliveryDate}
-                onChange={(e) => setDeliveryDate(e.target.value)}
-              />
-              <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" /> Earliest: {minDate} (4:00 PM London cut-off)
-              </p>
-            </div>
+        <div className="mt-4 space-y-1.5">
+          <Label htmlFor="ddate" className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Delivery date
+          </Label>
+          <Input
+            id="ddate"
+            type="date"
+            min={minDate}
+            value={deliveryDate}
+            onChange={(e) => setDeliveryDate(e.target.value)}
+          />
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" /> Earliest: {minDate} (4:00 PM London cut-off)
+          </p>
+        </div>
 
-            <Button className="w-full" disabled={submitting || cart.length === 0} onClick={submit}>
-              {submitting ? "Submitting…" : "Submit Request"}
-            </Button>
+        <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-dashed border-input bg-secondary p-3 text-xs text-muted-foreground">
+          <Send className="h-4 w-4 shrink-0" />
+          <span>
+            Costs are set by the Hub specialist at approval — you&rsquo;ll review prices at Final Confirm.
+          </span>
+        </div>
 
-            {cart.length > 0 && (
-              <div className="space-y-2 border-t pt-3">
-                <Label htmlFor="tmpl">Save as template</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="tmpl"
-                    maxLength={50}
-                    placeholder="e.g. Tuesday restock"
-                    value={templateName}
-                    onChange={(e) => setTemplateName(e.target.value)}
-                  />
-                  <Button variant="outline" disabled={savingTemplate || !templateName.trim()} onClick={saveTemplate}>
-                    {savingTemplate ? "Saving…" : "Save"}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <button
+          disabled={submitting || cart.length === 0}
+          onClick={submit}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-[15px] font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
+        >
+          {submitting ? (
+            "Submitting…"
+          ) : (
+            <>
+              <Send className="h-[17px] w-[17px]" /> Submit Request to Hub
+            </>
+          )}
+        </button>
       </div>
 
-      {/* Add-to-cart dialog */}
+      {/* Save as template */}
+      {cart.length > 0 && (
+        <div className="rounded-2xl border bg-card p-4">
+          <Label htmlFor="tmpl" className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Save as template
+          </Label>
+          <div className="mt-2 flex gap-2">
+            <Input
+              id="tmpl"
+              maxLength={50}
+              placeholder="e.g. Tuesday restock"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+            />
+            <Button variant="outline" disabled={savingTemplate || !templateName.trim()} onClick={saveTemplate}>
+              {savingTemplate ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Product modifier dialog */}
       <Dialog open={active != null} onOpenChange={(o) => !o && setActive(null)}>
         <DialogContent>
           {active && (
             <>
               <DialogHeader>
                 <DialogTitle>{active.name}</DialogTitle>
-                <DialogDescription>Choose options and quantity.</DialogDescription>
+                <DialogDescription>
+                  per {active.unit} · {active.lead_time_hours}h lead time
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 {productGroups(active.id).map((g) => (
                   <div key={g.id} className="space-y-2">
-                    <Label>
-                      {g.name}{" "}
-                      {g.is_required ? (
-                        <Badge variant="secondary" className="ml-1">required</Badge>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">(optional)</span>
-                      )}
-                    </Label>
-                    <Select
-                      value={sel[g.id] ?? ""}
-                      onValueChange={(v) => setSel((s) => ({ ...s, [g.id]: v }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {groupOptions(g.id).map((o) => (
-                          <SelectItem key={o.id} value={o.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        {g.name}
+                      </span>
+                      <span
+                        className="rounded-full px-1.5 py-0.5 text-[9.5px] font-extrabold tracking-wide"
+                        style={
+                          g.is_required
+                            ? { color: "var(--primary)", background: "var(--accent)" }
+                            : { color: "var(--muted-foreground)", background: "var(--secondary)" }
+                        }
+                      >
+                        {g.is_required ? "REQUIRED" : "OPTIONAL"}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {groupOptions(g.id).map((o) => {
+                        const on = sel[g.id] === o.id;
+                        return (
+                          <button
+                            key={o.id}
+                            onClick={() =>
+                              setSel((s) => {
+                                const next = { ...s };
+                                if (on && !g.is_required) delete next[g.id];
+                                else next[g.id] = o.id;
+                                return next;
+                              })
+                            }
+                            className={
+                              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold transition " +
+                              (on
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-secondary text-foreground/80")
+                            }
+                          >
+                            {on && <Check className="h-3.5 w-3.5" />}
                             {o.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="qty">Quantity</Label>
-                    <Input
-                      id="qty"
-                      type="number"
-                      min={1}
-                      value={qty}
-                      onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
-                    />
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[13.5px] font-bold">Quantity</div>
+                    <div className="text-xs text-muted-foreground">{active.unit}s</div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="note">Note</Label>
-                    <Input id="note" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} />
+                  <div className="flex items-center overflow-hidden rounded-full border border-input">
+                    <button
+                      onClick={() => setQty((q) => Math.max(1, q - 1))}
+                      aria-label="Decrease"
+                      className="grid h-9 w-9 place-items-center bg-card"
+                    >
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <span className="min-w-[46px] text-center font-mono text-[15px] font-bold">{qty}</span>
+                    <button
+                      onClick={() => setQty((q) => q + 1)}
+                      aria-label="Increase"
+                      className="grid h-9 w-9 place-items-center bg-card"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
                   </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="note" className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Note (optional)
+                  </Label>
+                  <Input
+                    id="note"
+                    maxLength={200}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Add a note for the Hub…"
+                  />
+                  <div className="text-right text-[11px] text-muted-foreground">{note.length} / 200</div>
                 </div>
               </div>
               <DialogFooter>
-                <Button disabled={!requiredMet} onClick={addToCart}>
-                  Add to cart
+                <Button disabled={!requiredMet} onClick={addToCart} className="w-full">
+                  <Plus className="h-4 w-4" /> Add to request
                 </Button>
               </DialogFooter>
             </>
