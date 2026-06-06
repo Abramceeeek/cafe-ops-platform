@@ -16,6 +16,7 @@ import {
   Receipt,
   Users,
   Menu,
+  User,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,18 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ModeToggle } from "@/components/mode-toggle";
 import NotificationBell from "@/components/notification-bell";
 import SignOutButton from "@/components/sign-out-button";
+import { MobileShell } from "@/components/mobile-shell";
+
+// Shop (FOH/Kitchen) + Hub (Specialists/Courier) use the mobile app shell.
+// Admin keeps the desktop browser/sidebar layout.
+const MOBILE_ROLES = [
+  "foh_manager",
+  "kitchen_manager",
+  "meat_specialist",
+  "bread_baker",
+  "pastry_chef",
+  "courier",
+];
 
 interface NavItem {
   href: string;
@@ -34,6 +47,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: [] },
+  { href: "/account", label: "My Account", icon: User, roles: [] },
   { href: "/request", label: "New Request", icon: PlusCircle, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/templates", label: "Templates", icon: Files, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/orders", label: "Orders", icon: ClipboardList, roles: ["foh_manager", "kitchen_manager"] },
@@ -47,7 +61,7 @@ const NAV: NavItem[] = [
 ];
 
 const READY = new Set([
-  "/", "/catalog", "/request", "/templates", "/inbox", "/orders", "/board", "/manifest",
+  "/", "/account", "/catalog", "/request", "/templates", "/inbox", "/orders", "/board", "/manifest",
   "/live-ops", "/finance", "/users",
 ]);
 
@@ -123,6 +137,12 @@ export function AppShell({
   const items = NAV.filter(
     (i) => READY.has(i.href) && (i.roles.length === 0 || i.roles.includes(role)),
   );
+
+  // Shop + Hub roles use the mobile app shell (per-screen appbar + bottom tab
+  // bar); Hub roles render dark. Admin keeps the desktop sidebar below.
+  if (MOBILE_ROLES.includes(role)) {
+    return <MobileShell role={role}>{children}</MobileShell>;
+  }
 
   return (
     <div className="flex min-h-screen">

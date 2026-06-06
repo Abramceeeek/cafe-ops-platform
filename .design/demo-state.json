@@ -1,0 +1,13 @@
+{
+  "shopName": "Shoreditch",
+  "shopId": "81b59d74-9a05-40de-8779-a0b7ce6507cb",
+  "userId": "ae8916c6-bcbd-495c-b2ff-24857c27bbac",
+  "orderIds": [
+    "8a19bd0b-6cf4-4efe-9495-840e2ab3da08",
+    "b6a25813-f206-4953-a299-d9b7e9345bde",
+    "397366a5-d610-483e-8c70-52d75c4c0387",
+    "86f40be2-5b34-408c-aae2-0c670fedc4d3"
+  ],
+  "templateId": "f66a7041-ab35-4488-887a-6eeeb29df8f2",
+  "specialistId": "652bbf10-5d48-4cf4-b93e-ce399a26ad17"
+}

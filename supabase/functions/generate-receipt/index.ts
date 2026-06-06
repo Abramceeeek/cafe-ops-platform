@@ -69,7 +69,6 @@ Deno.serve(async (req) => {
         `id, shop_id, requested_delivery_date, delivered_at, status, receipt_id,
          shops ( name ),
          courier:profiles!orders_assigned_courier_fkey ( full_name ),
-         manifest_stops ( signature_data, signed_off_by:profiles!manifest_stops_signed_off_by_fkey ( full_name ) ),
          order_items ( quantity, unit, unit_cost, products ( name ), order_item_modifiers ( modifier_option_name ) )`
       )
       .eq("id", order_id)
@@ -132,11 +131,24 @@ Deno.serve(async (req) => {
     const courierObj = order.courier as unknown as { full_name: string } | null;
     line(`Courier: ${courierObj?.full_name ?? "Unknown"}`);
 
-    const stopsArr = order.manifest_stops as unknown as Array<{
-      signature_data: string | null;
-      signed_off_by: { full_name: string } | null;
-    }> | null;
-    const stop = stopsArr && stopsArr.length > 0 ? stopsArr[0] : null;
+    const { data: manifest } = await admin
+      .from("delivery_manifests")
+      .select("id")
+      .eq("delivery_date", order.requested_delivery_date)
+      .limit(1)
+      .maybeSingle();
+
+    let stop = null;
+    if (manifest) {
+      const { data: stopData } = await admin
+        .from("manifest_stops")
+        .select(`signature_data, signed_off_by:profiles!manifest_stops_signed_off_by_fkey ( full_name )`)
+        .eq("manifest_id", manifest.id)
+        .eq("shop_id", order.shop_id)
+        .maybeSingle();
+      stop = stopData as unknown as { signature_data: string | null; signed_off_by: { full_name: string } | null } | null;
+    }
+
     line(`Received By: ${stop?.signed_off_by?.full_name ?? "Unknown"}`);
     line(`Signature Captured: ${stop?.signature_data ? "Yes" : "No"}`);
     y -= 6;

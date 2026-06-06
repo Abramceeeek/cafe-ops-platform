@@ -359,12 +359,12 @@ CREATE TABLE delivery_manifests (
 CREATE TABLE manifest_stops (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   manifest_id     UUID NOT NULL REFERENCES delivery_manifests(id) ON DELETE CASCADE,
-  order_id        UUID NOT NULL REFERENCES orders(id),
   shop_id         UUID NOT NULL REFERENCES shops(id),
   stop_sequence   INT NOT NULL,
   signed_off_by   UUID REFERENCES profiles(id),   -- Shop manager who received
   signed_off_at   TIMESTAMPTZ,
-  signature_data  TEXT    -- Base64 signature string (if using digital signature)
+  signature_data  TEXT,    -- Base64 signature string (if using digital signature)
+  CONSTRAINT manifest_stops_unique_shop UNIQUE (manifest_id, shop_id)
 );
 
 -- ─────────────────────────────────────────────

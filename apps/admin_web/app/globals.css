@@ -93,3 +93,63 @@
     letter-spacing: -0.01em;
   }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Shop-app screen components (FOH & Kitchen design system).
+   Kept theme-independent where the design intends a fixed treatment.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Cut-off countdown banner — fixed warm-dark regardless of theme (§10) */
+.countdown {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  padding: 17px 20px 18px;
+  color: #f6ecdc;
+  background: linear-gradient(150deg, #2a211a 0%, #3c2c1e 100%);
+  box-shadow: 0 2px 6px rgba(70, 45, 20, 0.07), 0 10px 30px rgba(70, 45, 20, 0.08);
+}
+.countdown::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.55;
+  background: radial-gradient(circle at 90% 8%, rgba(226, 112, 58, 0.55), transparent 58%);
+  pointer-events: none;
+}
+.countdown > * {
+  position: relative;
+  z-index: 1;
+}
+.cd-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #e2a878;
+}
+.cd-time {
+  font-family: var(--font-mono);
+  font-size: 46px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin-top: 7px;
+  line-height: 1;
+}
+.cd-time span {
+  font-size: 22px;
+  opacity: 0.65;
+  font-weight: 500;
+}
+.cd-track {
+  height: 5px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.12);
+  margin-top: 14px;
+  overflow: hidden;
+}
+.cd-fill {
+  height: 100%;
+  background: #e2703a;
+  border-radius: 99px;
+}

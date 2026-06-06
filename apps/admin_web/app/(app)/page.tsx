@@ -8,10 +8,63 @@ import { CutoffCountdown } from "@/components/cutoff-countdown";
 
 export const dynamic = "force-dynamic";
 
+const SHOP_ROLES = ["foh_manager", "kitchen_manager"];
 const ACTIVE = [
   "pending_request", "specialist_approved", "shop_confirmed",
   "in_progress", "packaged", "ready_for_courier", "in_transit",
 ];
+const ROLE_TITLE: Record<string, string> = {
+  foh_manager: "FOH Manager",
+  kitchen_manager: "Kitchen Manager",
+};
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function shopShort(name: string) {
+  const m = name.split(/[—–-]/);
+  return (m[m.length - 1] ?? name).trim();
+}
+
+function fmtDate(d: string) {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function categoryIcon(cat: string): LucideIcon {
+  const c = cat.toLowerCase();
+  if (c.includes("meat") || c.includes("protein")) return Beef;
+  if (c.includes("bread") || c.includes("retail")) return Wheat;
+  if (c.includes("pastry") || c.includes("cookie") || c.includes("cake")) return Croissant;
+  return Package;
+}
+
+
+
+interface OrderRow {
+  id: string;
+  status: string;
+  requested_delivery_date: string;
+  order_items: { quantity: number; unit_cost: number | null; products: { name: string; product_categories: { name: string } | null } | null }[];
+}
+
+function summarize(o: OrderRow) {
+  const cat = o.order_items[0]?.products?.product_categories?.name ?? "Order";
+  const items = o.order_items.length;
+  const priced = o.order_items.length > 0 && o.order_items.every((i) => i.unit_cost != null);
+  const total = priced
+    ? o.order_items.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_cost), 0)
+    : null;
+  return { cat, items, total, code: o.id.slice(0, 4).toUpperCase() };
+}
 
 interface OrderRow {
   id: string;
@@ -170,10 +223,32 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Operations overview.</p>
+    <div className="mx-auto max-w-md space-y-4 pb-8">
+      {/* App bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-accent bg-accent text-sm font-bold text-accent-foreground">
+            {initials(name)}
+          </div>
+          <div className="leading-tight">
+            <div className="text-base font-bold">{shopShort(shopName)}</div>
+            <div className="text-xs text-muted-foreground">
+              {name} · {ROLE_TITLE[role]}
+            </div>
+          </div>
+        </div>
+        <Link
+          href="/orders"
+          aria-label="Orders"
+          className="relative grid h-9 w-9 place-items-center text-foreground/80"
+        >
+          <Bell className="h-5 w-5" />
+          {needsAction.length > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full border-2 border-background bg-primary px-1 text-[10px] font-extrabold text-primary-foreground">
+              {needsAction.length}
+            </span>
+          )}
+        </Link>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (

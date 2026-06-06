@@ -1,0 +1,19 @@
+name: shared_models
+description: Shared models for HubSync mobile apps.
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  shared_constants:
+    path: ../shared_constants
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.8.1
+
+dev_dependencies:
+  build_runner: ^2.4.6
+  freezed: ^2.4.5
+  json_serializable: ^4.8.1
+  flutter_lints: ^3.0.0
