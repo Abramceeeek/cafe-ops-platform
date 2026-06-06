@@ -47,23 +47,19 @@ interface OrderRow {
   order_items: { quantity: number; products: { product_categories: { name: string } | null } | null }[];
 }
 
-const SHOP_ROLES = ["foh_manager", "kitchen_manager"];
-
-function fmtDate(d: string): string {
-  const dt = new Date(d + "T00:00:00");
-  return dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
-}
 function categoryOf(o: OrderRow): string {
   return o.order_items?.[0]?.products?.product_categories?.name ?? "Order";
 }
 
 export default async function DashboardPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const { data: profile } = user
-    ? await supabase.from("profiles").select("role, shop_id").eq("id", user.id).single()
+    ? await supabase.from("profiles").select("role, shop_id, full_name, shops(name)").eq("id", user.id).single()
     : { data: null };
-  const role = profile?.role as string | undefined;
+  const role = profile?.role as string | undefined ?? "unknown";
+  const name = profile?.full_name || "Unknown User";
+  const shopName = (profile?.shops as { name?: string })?.name || "Central Hub";
 
   // ── Shop (FOH / BOH) redesigned home ──
   if (role && SHOP_ROLES.includes(role)) {
@@ -189,9 +185,10 @@ export default async function DashboardPage() {
   const { data } = await supabase.from("orders").select("status");
   const orders = data ?? [];
   const count = (statuses: string[]) => orders.filter((o) => statuses.includes(o.status as string)).length;
+  const needsActionCount = count(["pending_request"]);
   const stats = [
     { label: "Active orders", value: count(ACTIVE) },
-    { label: "Awaiting approval", value: count(["pending_request"]) },
+    { label: "Awaiting approval", value: needsActionCount },
     { label: "In transit", value: count(["in_transit"]) },
     { label: "Delivered", value: count(["delivered"]) },
   ];
@@ -217,9 +214,9 @@ export default async function DashboardPage() {
           className="relative grid h-9 w-9 place-items-center text-foreground/80"
         >
           <Bell className="h-5 w-5" />
-          {needsAction.length > 0 && (
+          {needsActionCount > 0 && (
             <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full border-2 border-background bg-primary px-1 text-[10px] font-extrabold text-primary-foreground">
-              {needsAction.length}
+              {needsActionCount}
             </span>
           )}
         </Link>

@@ -10,17 +10,13 @@ import {
   Send,
   Minus,
   Check,
-  Croissant,
-  Wheat,
-  Beef,
-  Package,
-  type LucideIcon,
 } from "lucide-react";
 import { submitOrder } from "@/app/actions/orders";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -288,7 +284,6 @@ export default function NewRequestPage() {
       {categories.map((cat) => {
         const items = products.filter((p) => p.category_id === cat.id);
         if (items.length === 0) return null;
-        const Icon = categoryIcon(cat.name);
         return (
           <div key={cat.id} className="space-y-2">
             <div className="px-0.5 text-[11px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">
@@ -306,9 +301,7 @@ export default function NewRequestPage() {
                       (i < items.length - 1 ? "border-b border-border" : "")
                     }
                   >
-                    <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-lg bg-secondary text-foreground/70">
-                      <Icon className="h-[20px] w-[20px]" />
-                    </span>
+
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-semibold">{p.name}</span>
                       <span className="block text-xs text-muted-foreground">
