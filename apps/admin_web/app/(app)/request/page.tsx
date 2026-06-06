@@ -48,14 +48,22 @@ interface CartLine {
   note: string;
 }
 
-import { earliestDate } from "@/lib/utils";
+// Which Hub specialist receives each category (routing per the live model).
+function specialistFor(categoryName: string): string {
+  if (/meat|smoked/i.test(categoryName)) return "Pitmaster";
+  return "Baker"; // Kitchen Bread + Pastry / Retail Bakery
+}
 
-function categoryIcon(cat: string): LucideIcon {
-  const c = cat.toLowerCase();
-  if (c.includes("meat") || c.includes("smoked") || c.includes("prep")) return Beef;
-  if (c.includes("bread")) return Wheat;
-  if (c.includes("pastry") || c.includes("retail") || c.includes("cookie") || c.includes("cake")) return Croissant;
-  return Package;
+function earliestDate(now: Date, maxLeadHours: number): string {
+  const londonHour = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now),
+  );
+  const cutoffPassed = londonHour >= 16;
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const leadDays = Math.max(1, Math.ceil(maxLeadHours / 24));
+  const penalty = cutoffPassed ? 1 : 0;
+  d.setUTCDate(d.getUTCDate() + leadDays + penalty);
+  return d.toISOString().slice(0, 10);
 }
 
 export default function NewRequestPage() {
@@ -69,6 +77,7 @@ export default function NewRequestPage() {
   const [serverNow, setServerNow] = useState<Date>(new Date());
 
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [filterCat, setFilterCat] = useState<string | null>(null);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -143,6 +152,9 @@ export default function NewRequestPage() {
   );
   const minDate = earliestDate(serverNow, maxLead);
 
+  // only categories the role can actually order from (products are RLS-scoped, categories are not)
+  const visibleCats = categories.filter((c) => products.some((p) => p.category_id === c.id));
+
   async function submit() {
     if (!shopId || !userId) return toast.error("Your profile has no shop assigned.");
     if (cart.length === 0) return toast.error("Cart is empty.");
@@ -213,15 +225,63 @@ export default function NewRequestPage() {
     <div className="space-y-5 pb-4">
       <div className="flex items-end justify-between px-0.5 pt-1">
         <div>
-          <h1 className="font-display text-2xl">New Request</h1>
-          <p className="text-sm text-muted-foreground">Browse the catalog and build your request.</p>
+          <h1 className="font-display text-2xl tracking-tight">New Request</h1>
+          <p className="text-sm text-muted-foreground">Browse your catalog and build your request.</p>
         </div>
-        <span
-          className="font-mono text-sm font-bold"
-          style={{ color: cart.length ? "var(--primary)" : "var(--muted-foreground)" }}
-        >
-          {cart.length} item{cart.length !== 1 ? "s" : ""}
-        </span>
+
+        {visibleCats.length > 1 && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFilterCat(null)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                filterCat === null ? "border-primary bg-primary text-primary-foreground" : "bg-card text-foreground"
+              }`}
+            >
+              All
+            </button>
+            {visibleCats.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setFilterCat(cat.id)}
+                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filterCat === cat.id ? "border-primary bg-primary text-primary-foreground" : "bg-card text-foreground"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {visibleCats.filter((c) => !filterCat || c.id === filterCat).map((cat) => {
+          const items = products.filter((p) => p.category_id === cat.id);
+          if (items.length === 0) return null;
+          return (
+            <Card key={cat.id}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{cat.name}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-2 sm:grid-cols-2">
+                {items.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between rounded-md border p-3"
+                  >
+                    <div>
+                      <div className="text-sm font-medium">{p.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        per {p.unit} · {p.lead_time_hours}h lead
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => openProduct(p)}>
+                      <Plus className="h-4 w-4" /> Add
+                    </Button>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Catalog */}
@@ -266,52 +326,71 @@ export default function NewRequestPage() {
       })}
 
       {/* Cart */}
-      <div className="rounded-2xl border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="font-display text-lg">Your Cart</span>
-          <span className="text-[13px] font-semibold text-muted-foreground">
-            {cart.length} line{cart.length !== 1 ? "s" : ""}
-          </span>
-        </div>
+      <div className="lg:sticky lg:top-6 lg:self-start">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Cart ({cart.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {cart.length === 0 && (
+              <p className="text-sm text-muted-foreground">No items yet.</p>
+            )}
 
-        {cart.length === 0 ? (
-          <p className="py-2 text-sm text-muted-foreground">No items yet — tap a product above.</p>
-        ) : (
-          <div className="divide-y divide-border">
-            {cart.map((l) => {
-              const CatIcon = categoryIcon(
-                categories.find((c) => c.id === l.product.category_id)?.name ?? "",
-              );
+            {(() => {
+              const catIds = Array.from(new Set(cart.map((l) => l.product.category_id)));
               return (
-                <div key={l.key} className="flex items-start gap-3 py-3">
-                  <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
-                    <CatIcon className="h-[18px] w-[18px]" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-bold">{l.product.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {Object.entries(l.selected)
-                        .map(([, oid]) => options.find((o) => o.id === oid)?.name)
-                        .filter(Boolean)
-                        .join(" · ") || "No options"}
-                      {l.note ? ` — ${l.note}` : ""}
+                <>
+                  {catIds.length >= 2 && (
+                    <div
+                      className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs"
+                      style={{ background: "var(--accent)", borderColor: "var(--st-pend-line)", color: "var(--ink-2)" }}
+                    >
+                      <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: "var(--primary)" }} />
+                      <span>
+                        This cart spans {catIds.length} categories — it&apos;ll submit as{" "}
+                        <strong>{catIds.length} orders</strong>, one per Hub specialist.
+                      </span>
                     </div>
-                  </div>
-                  <span className="shrink-0 font-mono text-[13.5px] font-bold">
-                    {l.quantity} {l.product.unit}
-                  </span>
-                  <button
-                    onClick={() => setCart((c) => c.filter((x) => x.key !== l.key))}
-                    aria-label="Remove"
-                    className="shrink-0 text-muted-foreground transition hover:text-foreground"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                  )}
+                  {catIds.map((cid) => {
+                    const catName = categories.find((c) => c.id === cid)?.name ?? "Items";
+                    const lines = cart.filter((l) => l.product.category_id === cid);
+                    return (
+                      <div key={cid} className="space-y-1.5">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-sm font-bold">{catName}</span>
+                          <span className="font-mono text-xs text-muted-foreground">→ {specialistFor(catName)}</span>
+                        </div>
+                        {lines.map((l) => (
+                          <div key={l.key} className="flex items-start justify-between gap-2 border-b pb-2 text-sm">
+                            <div>
+                              <div className="font-medium">
+                                {l.product.name} × {l.quantity} {l.product.unit}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {Object.entries(l.selected)
+                                  .map(([, oid]) => options.find((o) => o.id === oid)?.name)
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                                {l.note ? ` — ${l.note}` : ""}
+                              </div>
+                            </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => setCart((c) => c.filter((x) => x.key !== l.key))}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </>
               );
-            })}
-          </div>
-        )}
+            })()}
 
         <div className="mt-4 space-y-1.5">
           <Label htmlFor="ddate" className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
