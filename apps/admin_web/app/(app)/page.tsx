@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   Bell,
-  Clock,
   Plus,
   Files,
   Flame,
@@ -21,7 +20,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";

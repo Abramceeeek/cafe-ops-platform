@@ -86,7 +86,7 @@ export async function submitOrder(payload: Payload) {
   const { data: cutoffConfig } = await admin
     .from("cutoff_config")
     .select("cutoff_time, timezone")
-    .lte("effective_from", dateOnly(now))
+    .lte("effective_from", now.toISOString().split("T")[0])
     .order("effective_from", { ascending: false })
     .limit(1)
     .single();
