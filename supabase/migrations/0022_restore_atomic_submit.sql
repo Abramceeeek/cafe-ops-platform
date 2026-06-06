@@ -6,6 +6,8 @@
 -- and creates every order + item + modifier in ONE transaction. Must run AFTER 0020
 -- (which drops the old signature). Server action calls this and falls back to the loop
 -- only if the function is not yet applied to a given environment.
+DROP FUNCTION IF EXISTS public.submit_request_atomic(uuid, uuid, date, jsonb);
+
 CREATE OR REPLACE FUNCTION public.submit_request_atomic(
   p_shop_id uuid,
   p_submitted_by uuid,
