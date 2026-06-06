@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_models/shared_models.dart';
 import 'package:shared_constants/shared_constants.dart';
 import 'supabase_provider.dart';
 
@@ -25,6 +24,5 @@ final currentUserRoleProvider = FutureProvider<UserRole?>((ref) async {
       .eq('id', user.id)
       .single();
 
-  if (response == null) return null;
   return UserRole.fromString(response['role'] as String);
 });

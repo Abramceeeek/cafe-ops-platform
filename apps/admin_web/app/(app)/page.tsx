@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PlusCircle, Files, ChevronRight } from "lucide-react";
+import { PlusCircle, Files, ChevronRight, Bell } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,32 +39,6 @@ function fmtDate(d: string) {
   });
 }
 
-function categoryIcon(cat: string): LucideIcon {
-  const c = cat.toLowerCase();
-  if (c.includes("meat") || c.includes("protein")) return Beef;
-  if (c.includes("bread") || c.includes("retail")) return Wheat;
-  if (c.includes("pastry") || c.includes("cookie") || c.includes("cake")) return Croissant;
-  return Package;
-}
-
-
-
-interface OrderRow {
-  id: string;
-  status: string;
-  requested_delivery_date: string;
-  order_items: { quantity: number; unit_cost: number | null; products: { name: string; product_categories: { name: string } | null } | null }[];
-}
-
-function summarize(o: OrderRow) {
-  const cat = o.order_items[0]?.products?.product_categories?.name ?? "Order";
-  const items = o.order_items.length;
-  const priced = o.order_items.length > 0 && o.order_items.every((i) => i.unit_cost != null);
-  const total = priced
-    ? o.order_items.reduce((s, i) => s + Number(i.quantity) * Number(i.unit_cost), 0)
-    : null;
-  return { cat, items, total, code: o.id.slice(0, 4).toUpperCase() };
-}
 
 interface OrderRow {
   id: string;

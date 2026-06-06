@@ -10,6 +10,7 @@ void main() async {
   // TODO: Load from environment variables (.env)
   await Supabase.initialize(
     url: 'YOUR_SUPABASE_URL',
+    // ignore: deprecated_member_use
     anonKey: 'YOUR_SUPABASE_ANON_KEY',
   );
 

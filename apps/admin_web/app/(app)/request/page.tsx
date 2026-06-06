@@ -428,6 +428,8 @@ export default function NewRequestPage() {
             </>
           )}
         </button>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Save as template */}
