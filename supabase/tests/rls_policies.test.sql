@@ -75,14 +75,20 @@ DO $$ DECLARE c int; BEGIN
 END $$;
 RESET ROLE;
 
--- ── Courier: only ready_for_courier/in_transit/delivered (2) ────────
+-- ── Courier: whole day's route — every order shop_confirmed→delivered, any
+--    shop, regardless of assignment (0026 single-route model). Fixture has
+--    shop_confirmed(e2, unassigned) + ready_for_courier(e4) + delivered(e5) = 3.
+--    Crucially includes the UNASSIGNED shop_confirmed order; still no pending. ──
 SET request.jwt.claims = '{"sub":"33333333-3333-3333-3333-333333333301"}';
 SET ROLE authenticated;
-DO $$ DECLARE c int; bad int; BEGIN
+DO $$ DECLARE c int; bad int; unassigned int; BEGIN
   SELECT count(*) INTO c FROM orders;
-  IF c <> 2 THEN RAISE EXCEPTION 'Courier should see 2 orders, saw %', c; END IF;
+  IF c <> 3 THEN RAISE EXCEPTION 'Courier should see 3 route orders, saw %', c; END IF;
   SELECT count(*) INTO bad FROM orders WHERE status = 'pending_request';
   IF bad <> 0 THEN RAISE EXCEPTION 'Courier must not see pending_request, saw %', bad; END IF;
+  -- proves visibility is not gated on assignment: e2 is shop_confirmed + unassigned
+  SELECT count(*) INTO unassigned FROM orders WHERE assigned_courier IS NULL;
+  IF unassigned <> 1 THEN RAISE EXCEPTION 'Courier should see the 1 unassigned route order, saw %', unassigned; END IF;
 END $$;
 RESET ROLE;
 
