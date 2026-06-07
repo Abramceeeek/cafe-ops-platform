@@ -16,7 +16,6 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -219,69 +218,42 @@ export default function NewRequestPage() {
 
   return (
     <div className="space-y-5 pb-4">
-      <div className="flex items-end justify-between px-0.5 pt-1">
-        <div>
-          <h1 className="font-display text-2xl tracking-tight">New Request</h1>
-          <p className="text-sm text-muted-foreground">Browse your catalog and build your request.</p>
-        </div>
-
-        {visibleCats.length > 1 && (
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setFilterCat(null)}
-              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                filterCat === null ? "border-primary bg-primary text-primary-foreground" : "bg-card text-foreground"
-              }`}
-            >
-              All
-            </button>
-            {visibleCats.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setFilterCat(cat.id)}
-                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                  filterCat === cat.id ? "border-primary bg-primary text-primary-foreground" : "bg-card text-foreground"
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {visibleCats.filter((c) => !filterCat || c.id === filterCat).map((cat) => {
-          const items = products.filter((p) => p.category_id === cat.id);
-          if (items.length === 0) return null;
-          return (
-            <Card key={cat.id}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">{cat.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-2 sm:grid-cols-2">
-                {items.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                  >
-                    <div>
-                      <div className="text-sm font-medium">{p.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        per {p.unit} · {p.lead_time_hours}h lead
-                      </div>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => openProduct(p)}>
-                      <Plus className="h-4 w-4" /> Add
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          );
-        })}
+      <div className="px-0.5 pt-1">
+        <h1 className="font-display text-2xl tracking-tight">New Request</h1>
+        <p className="text-sm text-muted-foreground">Browse your catalog and build your request.</p>
       </div>
 
+      {/* Category filter chips */}
+      {visibleCats.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setFilterCat(null)}
+            className={
+              "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors " +
+              (filterCat === null ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground")
+            }
+          >
+            All
+          </button>
+          {visibleCats.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setFilterCat(cat.id)}
+              className={
+                "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors " +
+                (filterCat === cat.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground")
+              }
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Catalog */}
-      {categories.map((cat) => {
+      {visibleCats
+        .filter((c) => !filterCat || c.id === filterCat)
+        .map((cat) => {
         const items = products.filter((p) => p.category_id === cat.id);
         if (items.length === 0) return null;
         return (
@@ -319,14 +291,15 @@ export default function NewRequestPage() {
       })}
 
       {/* Cart */}
-      <div className="lg:sticky lg:top-6 lg:self-start">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Cart ({cart.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <div className="space-y-4 rounded-2xl border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <span className="font-display text-lg">Your Cart</span>
+              <span className="text-[13px] font-semibold text-muted-foreground">
+                {cart.length} line{cart.length !== 1 ? "s" : ""}
+              </span>
+            </div>
             {cart.length === 0 && (
-              <p className="text-sm text-muted-foreground">No items yet.</p>
+              <p className="text-sm text-muted-foreground">No items yet — tap a product above.</p>
             )}
 
             {(() => {
@@ -421,8 +394,6 @@ export default function NewRequestPage() {
             </>
           )}
         </button>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Save as template */}
