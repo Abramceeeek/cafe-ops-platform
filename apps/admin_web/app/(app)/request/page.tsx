@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-interface Category { id: string; name: string }
+interface Category { id: string; name: string; assigned_role: string | null }
 interface Product {
   id: string;
   category_id: string;
@@ -43,10 +43,15 @@ interface CartLine {
   note: string;
 }
 
-// Which Hub specialist receives each category (routing per the live model).
-function specialistFor(categoryName: string): string {
-  if (/meat|smoked/i.test(categoryName)) return "Pitmaster";
-  return "Baker"; // Kitchen Bread + Pastry / Retail Bakery
+// Hub specialist display name from the category's assigned_role (DB-driven,
+// not a hardcoded regex — add a category in the DB, no deploy needed).
+const ROLE_LABEL: Record<string, string> = {
+  meat_specialist: "Pitmaster",
+  bread_baker: "Baker",
+  pastry_chef: "Pastry Chef",
+};
+function specialistFor(assignedRole: string | null | undefined): string {
+  return (assignedRole && ROLE_LABEL[assignedRole]) || "Hub";
 }
 
 function earliestDate(now: Date, maxLeadHours: number): string {
@@ -92,7 +97,7 @@ export default function NewRequestPage() {
       } = await supabase.auth.getUser();
       const [{ data: cats }, { data: prods }, { data: grps }, { data: opts }, profileRes, timeRes] =
         await Promise.all([
-          supabase.from("product_categories").select("id,name").order("display_order"),
+          supabase.from("product_categories").select("id,name,assigned_role").order("display_order"),
           supabase
             .from("products")
             .select("id,category_id,name,unit,lead_time_hours")
@@ -294,7 +299,7 @@ export default function NewRequestPage() {
         </div>
         <div className="space-y-5 lg:sticky lg:top-4">
       {/* Cart */}
-      <div className="space-y-4 rounded-2xl border bg-card p-4">
+      <div id="cart" className="scroll-mt-4 space-y-4 rounded-2xl border bg-card p-4">
             <div className="flex items-center justify-between">
               <span className="font-display text-lg">Your Cart</span>
               <span className="text-[13px] font-semibold text-muted-foreground">
@@ -322,13 +327,14 @@ export default function NewRequestPage() {
                     </div>
                   )}
                   {catIds.map((cid) => {
-                    const catName = categories.find((c) => c.id === cid)?.name ?? "Items";
+                    const catObj = categories.find((c) => c.id === cid);
+                    const catName = catObj?.name ?? "Items";
                     const lines = cart.filter((l) => l.product.category_id === cid);
                     return (
                       <div key={cid} className="space-y-1.5">
                         <div className="flex items-baseline gap-2">
                           <span className="text-sm font-bold">{catName}</span>
-                          <span className="font-mono text-xs text-muted-foreground">→ {specialistFor(catName)}</span>
+                          <span className="font-mono text-xs text-muted-foreground">→ {specialistFor(catObj?.assigned_role)}</span>
                         </div>
                         {lines.map((l) => (
                           <div key={l.key} className="flex items-start justify-between gap-2 border-b pb-2 text-sm">
@@ -422,6 +428,21 @@ export default function NewRequestPage() {
 
         </div>
       </div>
+
+      {/* Mobile: jump-to-cart (catalog is long; cart sits below). Hidden on lg (cart is a sticky sidebar). */}
+      {cart.length > 0 && (
+        <a
+          href="#cart"
+          className="fixed inset-x-4 bottom-[76px] z-30 mx-auto flex max-w-md items-center justify-between rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-lg lg:hidden"
+        >
+          <span>
+            {cart.length} item{cart.length !== 1 ? "s" : ""} in cart
+          </span>
+          <span className="flex items-center gap-1">
+            View cart <ChevronRight className="h-4 w-4 rotate-90" />
+          </span>
+        </a>
+      )}
 
       {/* Product modifier dialog */}
       <Dialog open={active != null} onOpenChange={(o) => !o && setActive(null)}>

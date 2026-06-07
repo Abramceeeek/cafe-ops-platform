@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   RefreshCw,
   ChevronRight,
+  Check,
   Croissant,
   Beef,
   Wheat,
@@ -74,6 +75,52 @@ function qtyLabel(r: OrderRow) {
 
 function category(r: OrderRow) {
   return r.order_items[0]?.products?.product_categories?.name ?? "Order";
+}
+
+// Anti-blind delivery confirm: the manager must tick every line they physically
+// received before "Confirm Receipt" enables — no one-tap blind accept.
+function ReceiptChecklist({ order, onConfirm }: { order: OrderRow; onConfirm: () => void }) {
+  const [checked, setChecked] = useState<boolean[]>(() => order.order_items.map(() => false));
+  const all = checked.length > 0 && checked.every(Boolean);
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        Verify each item received
+      </div>
+      {order.order_items.map((it, i) => (
+        <button
+          key={i}
+          onClick={() => setChecked((c) => c.map((v, j) => (j === i ? !v : v)))}
+          className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left"
+        >
+          <span
+            className="grid h-5 w-5 shrink-0 place-items-center rounded border-2"
+            style={
+              checked[i]
+                ? { background: "var(--st-done)", borderColor: "var(--st-done)", color: "#fff" }
+                : { borderColor: "var(--input)" }
+            }
+          >
+            {checked[i] && <Check className="h-3.5 w-3.5" />}
+          </span>
+          <span className="flex-1 text-sm">{it.products?.name ?? "Item"}</span>
+          <span className="font-mono text-xs text-muted-foreground">
+            {it.quantity} {it.unit}
+          </span>
+        </button>
+      ))}
+      <button
+        disabled={!all}
+        onClick={onConfirm}
+        className="flex w-full items-center justify-center rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
+      >
+        Confirm Receipt
+      </button>
+      {!all && (
+        <p className="text-center text-[11px] text-muted-foreground">Tick every line to confirm.</p>
+      )}
+    </div>
+  );
 }
 
 export default function OrdersPage() {
@@ -263,12 +310,10 @@ export default function OrdersPage() {
                         </>
                       )}
                       {o.status === "in_transit" && (
-                        <button
-                          onClick={() => void transition(o.id, "delivered", "Delivery confirmed")}
-                          className="flex w-full items-center justify-center rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
-                        >
-                          Confirm Receipt
-                        </button>
+                        <ReceiptChecklist
+                          order={o}
+                          onConfirm={() => void transition(o.id, "delivered", "Delivery confirmed")}
+                        />
                       )}
                       {o.status === "delivered" && <ReceiptButton orderId={o.id} />}
                     </div>
