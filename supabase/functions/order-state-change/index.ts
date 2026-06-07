@@ -5,31 +5,41 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Centralized state transition logic
+// ⚠️ CANONICAL STATE MACHINE — must stay byte-for-byte in step with the web
+// server action `apps/admin_web/app/actions/orders.ts` (VALID_TRANSITIONS /
+// TRANSITION_ROLES / STATUS_TIMESTAMP). The web is the live path today; this
+// edge function is the entry point for the Flutter apps. Until the web migrates
+// to call this function, any change here must be mirrored there and vice-versa.
 const ORDER_SPEC: Record<string, string[]> = {
   pending_request: ["specialist_approved", "rejected"],
-  specialist_approved: ["shop_confirmed"],
+  specialist_approved: ["shop_confirmed", "cancelled"],
   shop_confirmed: ["in_progress"],
   in_progress: ["packaged"],
   packaged: ["ready_for_courier"],
   ready_for_courier: ["in_transit"],
   in_transit: ["delivered"],
+  delivered: [],
+  rejected: [],
+  cancelled: [],
 };
 
 const TRANSITION_ROLES: Record<string, string[]> = {
   specialist_approved: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   rejected: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   shop_confirmed: ["foh_manager", "kitchen_manager", "admin"],
+  cancelled: ["foh_manager", "kitchen_manager", "admin"],
   in_progress: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   packaged: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   ready_for_courier: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   in_transit: ["courier", "admin"],
-  delivered: ["courier", "admin"],
+  // Two-party sign-off: the SHOP confirms receipt (delivered), not the courier.
+  delivered: ["foh_manager", "kitchen_manager", "admin"],
 };
 
 const STATUS_TIMESTAMP: Record<string, string> = {
   specialist_approved: "specialist_approved_at",
   shop_confirmed: "shop_confirmed_at",
+  in_progress: "in_progress_at",
   packaged: "packaged_at",
   ready_for_courier: "ready_at",
   delivered: "delivered_at",
@@ -112,7 +122,8 @@ Deno.serve(async (req) => {
     }
 
     if (status === "delivered") {
-      await adminClient.functions.invoke("generate-receipt", { body: { orderId: id } });
+      // generate-receipt reads `order_id` from the body (not `orderId`).
+      await adminClient.functions.invoke("generate-receipt", { body: { order_id: id } });
     }
 
     // TODO: Trigger FCM notifications
