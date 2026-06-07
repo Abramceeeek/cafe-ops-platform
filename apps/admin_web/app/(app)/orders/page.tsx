@@ -21,9 +21,12 @@ interface OrderRow {
   status: string;
   requested_delivery_date: string;
   submitted_at: string;
+  was_edited?: boolean;
   order_items: {
     quantity: number;
+    requested_quantity: number | null;
     unit: string;
+    unit_cost: number | null;
     products: { name: string; product_categories: { name: string } | null } | null;
   }[];
 }
@@ -83,8 +86,8 @@ export default function OrdersPage() {
     const { data } = await createClient()
       .from("orders")
       .select(
-        `id, status, requested_delivery_date, submitted_at,
-         order_items ( quantity, unit, products ( name, product_categories ( name ) ) )`,
+        `id, status, requested_delivery_date, submitted_at, was_edited,
+         order_items ( quantity, requested_quantity, unit, unit_cost, products ( name, product_categories ( name ) ) )`,
       )
       .order("requested_delivery_date", { ascending: false });
     setRows((data ?? []) as unknown as OrderRow[]);
@@ -196,6 +199,14 @@ export default function OrdersPage() {
                         <span>{qtyLabel(o)}</span>
                       </div>
                     </div>
+                    {o.was_edited && (
+                      <span
+                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide"
+                        style={{ color: "var(--st-pend)", background: "var(--st-pend-bg)" }}
+                      >
+                        EDITED
+                      </span>
+                    )}
                     <OrderStatusBadge status={o.status} />
                     {!actionable && (
                       <ChevronRight className="h-[18px] w-[18px] shrink-0 text-muted-foreground/60" />
@@ -204,12 +215,52 @@ export default function OrdersPage() {
                   {actionable && (
                     <div className="px-4 pb-3">
                       {o.status === "specialist_approved" && (
-                        <button
-                          onClick={() => void transition(o.id, "shop_confirmed", "Order confirmed")}
-                          className="flex w-full items-center justify-center rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
-                        >
-                          Final Confirm
-                        </button>
+                        <>
+                          <div className="mb-3 space-y-1 rounded-xl bg-secondary/60 p-3">
+                            {o.was_edited && (
+                              <div className="mb-1 text-[11px] font-bold" style={{ color: "var(--st-pend)" }}>
+                                The Hub edited this order — review the changes below.
+                              </div>
+                            )}
+                            {o.order_items.map((it, idx) => {
+                              const changed =
+                                it.requested_quantity != null &&
+                                Number(it.quantity) !== Number(it.requested_quantity);
+                              return (
+                                <div key={idx} className="flex items-center justify-between text-[13px]">
+                                  <span className="min-w-0 truncate">{it.products?.name ?? "Item"}</span>
+                                  <span className="shrink-0 font-mono">
+                                    {changed && (
+                                      <span className="mr-1 text-muted-foreground line-through">
+                                        {it.requested_quantity}
+                                      </span>
+                                    )}
+                                    {it.quantity} {it.unit}
+                                    {it.unit_cost != null && (
+                                      <span className="ml-2 font-bold">
+                                        £{(Number(it.unit_cost) * Number(it.quantity)).toFixed(2)}
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            <div className="flex justify-between border-t border-border pt-1 text-[13px] font-bold">
+                              <span>Total</span>
+                              <span className="font-mono">
+                                £{o.order_items
+                                  .reduce((s, it) => s + Number(it.unit_cost ?? 0) * Number(it.quantity), 0)
+                                  .toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => void transition(o.id, "shop_confirmed", "Order confirmed")}
+                            className="flex w-full items-center justify-center rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
+                          >
+                            Final Confirm
+                          </button>
+                        </>
                       )}
                       {o.status === "in_transit" && (
                         <button

@@ -87,7 +87,7 @@ export function MobileShell({
       ready_for_courier: "Order ready for pickup",
       in_transit: "Order out for delivery",
       delivered: "Order delivered",
-      rejected: "Order rejected",
+      rejected: "Order declined",
     };
     const relevant = RELEVANT[role] ?? [];
     const channel = supabase
@@ -96,10 +96,16 @@ export function MobileShell({
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
         (payload) => {
-          const status = (payload.new as { status?: string } | null)?.status;
+          const row = payload.new as { status?: string; was_edited?: boolean } | null;
+          const status = row?.status;
           if (!status) return;
           if (relevant.length > 0 && !relevant.includes(status)) return;
-          toast(MSG[status] ?? `Order update: ${status}`);
+          // Distinguish an edited approval so the shop knows to review changes.
+          const msg =
+            status === "specialist_approved" && row?.was_edited
+              ? "Order edited & approved — review changes"
+              : MSG[status] ?? `Order update: ${status}`;
+          toast(msg);
         },
       )
       .subscribe();

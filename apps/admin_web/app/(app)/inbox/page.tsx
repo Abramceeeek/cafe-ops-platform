@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { RefreshCw, Check, X, ChevronRight } from "lucide-react";
+import { RefreshCw, Check, X, ChevronRight, Trash2, Undo2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { updateOrderStatus } from "@/app/actions/orders";
 
@@ -42,6 +42,8 @@ export default function InboxPage() {
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [costs, setCosts] = useState<Record<string, string>>({});
+  const [qtys, setQtys] = useState<Record<string, string>>({});
+  const [removed, setRemoved] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -81,19 +83,45 @@ export default function InboxPage() {
 
   function openQuote(r: InboxRow) {
     if (openId === r.id) return setOpenId(null);
-    const init: Record<string, string> = {};
-    for (const i of mine(r)) init[i.id] = (i.unit_cost ?? 0).toFixed(2);
-    setCosts(init);
+    const c: Record<string, string> = {};
+    const q: Record<string, string> = {};
+    const rm: Record<string, boolean> = {};
+    for (const i of mine(r)) {
+      c[i.id] = (i.unit_cost ?? 0).toFixed(2);
+      q[i.id] = String(i.quantity);
+      rm[i.id] = false;
+    }
+    setCosts(c);
+    setQtys(q);
+    setRemoved(rm);
     setOpenId(r.id);
   }
 
   async function approve(r: InboxRow) {
     setBusy(true);
-    const item_costs = mine(r).map((i) => ({ id: i.id, unit_cost: parseFloat(costs[i.id] || "0") || 0 }));
-    const res = await updateOrderStatus({ order_id: r.id, new_status: "specialist_approved", item_costs });
+    const items = mine(r);
+    const kept = items.filter((i) => !removed[i.id]);
+    if (kept.length === 0) {
+      setBusy(false);
+      return toast.error("Can't approve an empty order — reject it instead.");
+    }
+    const item_edits = kept.map((i) => ({
+      id: i.id,
+      quantity: parseFloat(qtys[i.id] || String(i.quantity)) || Number(i.quantity),
+      unit_cost: parseFloat(costs[i.id] || "0") || 0,
+    }));
+    const removed_item_ids = items.filter((i) => removed[i.id]).map((i) => i.id);
+    const res = await updateOrderStatus({
+      order_id: r.id,
+      new_status: "specialist_approved",
+      item_edits,
+      removed_item_ids,
+    });
     setBusy(false);
     if (res.error) return toast.error(res.error + (res.details ? ": " + res.details : ""));
-    toast.success("Approved & priced");
+    toast.success(removed_item_ids.length || item_edits.some((e, idx) => e.quantity !== Number(kept[idx].quantity))
+      ? "Edited & approved"
+      : "Approved & priced");
     setOpenId(null);
     await load();
   }
@@ -109,14 +137,16 @@ export default function InboxPage() {
   }
 
   const total = (r: InboxRow) =>
-    mine(r).reduce((s, i) => s + (parseFloat(costs[i.id] || "0") || 0) * Number(i.quantity), 0);
+    mine(r)
+      .filter((i) => !removed[i.id])
+      .reduce((s, i) => s + (parseFloat(costs[i.id] || "0") || 0) * (parseFloat(qtys[i.id] || "0") || 0), 0);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between px-0.5 pt-1">
         <div>
           <h1 className="font-display text-2xl">Inbox</h1>
-          <p className="text-sm text-muted-foreground">Pending requests · sorted by urgency</p>
+          <p className="text-sm text-muted-foreground">Pending requests · review, edit &amp; quote</p>
         </div>
         <button onClick={() => void load()} aria-label="Refresh" className="grid h-9 w-9 place-items-center text-muted-foreground">
           <RefreshCw className="h-[18px] w-[18px]" />
@@ -125,10 +155,7 @@ export default function InboxPage() {
 
       {!loading && (
         <div className="px-0.5">
-          <span
-            className="rounded-full px-2.5 py-1 text-xs font-bold"
-            style={{ color: "var(--st-ready)", background: "var(--accent)" }}
-          >
+          <span className="rounded-full px-2.5 py-1 text-xs font-bold" style={{ color: "var(--st-ready)", background: "var(--accent)" }}>
             {visible.length} pending
           </span>
         </div>
@@ -167,48 +194,77 @@ export default function InboxPage() {
               </div>
 
               <div className="mt-3 space-y-2">
-                {items.map((i) => (
-                  <div key={i.id} className="text-[13px]">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="min-w-0">
-                        <span className="font-semibold">{i.products?.name ?? "Item"}</span>
-                        {i.order_item_modifiers.length > 0 && (
-                          <span className="text-muted-foreground">
-                            {" "}· {i.order_item_modifiers.map((m) => m.modifier_option_name).join(" · ")}
-                          </span>
-                        )}
-                        {i.custom_note && (
-                          <span className="italic text-muted-foreground"> — &ldquo;{i.custom_note}&rdquo;</span>
-                        )}
-                      </span>
-                      <span className="shrink-0 font-mono font-bold">
-                        {i.quantity} {i.unit}
-                      </span>
-                    </div>
-
-                    {open && (
-                      <div className="mt-1.5 flex items-center justify-between rounded-lg bg-secondary px-2.5 py-1.5">
-                        <span className="text-[11.5px] font-semibold text-muted-foreground">Unit cost / {i.unit}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1 rounded-md border border-input bg-card px-2 py-1">
-                            <span className="font-mono text-[13px] font-bold">£</span>
-                            <input
-                              inputMode="decimal"
-                              value={costs[i.id] ?? "0.00"}
-                              onChange={(e) =>
-                                setCosts((c) => ({ ...c, [i.id]: e.target.value.replace(/[^0-9.]/g, "") }))
-                              }
-                              className="w-12 bg-transparent text-right font-mono text-[13px] font-bold outline-none"
-                            />
-                          </div>
-                          <span className="w-16 text-right font-mono text-[12px] text-muted-foreground">
-                            = £{((parseFloat(costs[i.id] || "0") || 0) * Number(i.quantity)).toFixed(2)}
-                          </span>
-                        </div>
+                {items.map((i) => {
+                  const isRemoved = open && removed[i.id];
+                  return (
+                    <div key={i.id} className="text-[13px]">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={"min-w-0 " + (isRemoved ? "line-through opacity-50" : "")}>
+                          <span className="font-semibold">{i.products?.name ?? "Item"}</span>
+                          {i.order_item_modifiers.length > 0 && (
+                            <span className="text-muted-foreground">
+                              {" "}· {i.order_item_modifiers.map((m) => m.modifier_option_name).join(" · ")}
+                            </span>
+                          )}
+                          {i.custom_note && (
+                            <span className="italic text-muted-foreground"> — &ldquo;{i.custom_note}&rdquo;</span>
+                          )}
+                        </span>
+                        <span className="shrink-0 font-mono font-bold">
+                          {i.quantity} {i.unit}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      {open && (
+                        <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-secondary px-2.5 py-1.5">
+                          {isRemoved ? (
+                            <>
+                              <span className="text-[11.5px] font-semibold text-muted-foreground">Removed from order</span>
+                              <button
+                                onClick={() => setRemoved((m) => ({ ...m, [i.id]: false }))}
+                                className="flex items-center gap-1 text-[12px] font-semibold text-primary"
+                              >
+                                <Undo2 className="h-3.5 w-3.5" /> Undo
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11.5px] font-semibold text-muted-foreground">Qty</span>
+                                <input
+                                  inputMode="decimal"
+                                  value={qtys[i.id] ?? String(i.quantity)}
+                                  onChange={(e) => setQtys((q) => ({ ...q, [i.id]: e.target.value.replace(/[^0-9.]/g, "") }))}
+                                  className="w-12 rounded-md border border-input bg-card px-2 py-1 text-right font-mono text-[13px] font-bold outline-none"
+                                />
+                                <span className="text-[11px] text-muted-foreground">{i.unit}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1 rounded-md border border-input bg-card px-2 py-1">
+                                  <span className="font-mono text-[13px] font-bold">£</span>
+                                  <input
+                                    inputMode="decimal"
+                                    value={costs[i.id] ?? "0.00"}
+                                    onChange={(e) => setCosts((c) => ({ ...c, [i.id]: e.target.value.replace(/[^0-9.]/g, "") }))}
+                                    className="w-12 bg-transparent text-right font-mono text-[13px] font-bold outline-none"
+                                  />
+                                </div>
+                                <button
+                                  onClick={() => setRemoved((m) => ({ ...m, [i.id]: true }))}
+                                  aria-label="Remove line"
+                                  className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition hover:text-foreground"
+                                  style={{ color: "var(--st-bad)" }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {open ? (
@@ -240,7 +296,7 @@ export default function InboxPage() {
                   onClick={() => openQuote(r)}
                   className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
                 >
-                  Review &amp; quote <ChevronRight className="h-4 w-4" />
+                  Review, edit &amp; quote <ChevronRight className="h-4 w-4" />
                 </button>
               )}
             </div>
