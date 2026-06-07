@@ -344,9 +344,9 @@ export async function updateOrderStatus(payload: {
     const items = order.order_items as { products?: { product_categories?: { assigned_role?: string } | null } | null }[] | null;
     const assignedRole = items?.[0]?.products?.product_categories?.assigned_role;
     if (assignedRole !== role) return { error: "not_your_category" };
-  } else if (role === "courier") {
-    if (order.assigned_courier !== user.id) return { error: "not_assigned_courier" };
   }
+  // Courier: single-route model (migration 0026) — any courier delivers the day's
+  // route, so transitions aren't gated on assigned_courier (read is already global).
 
   const patch: Record<string, unknown> = { status: payload.new_status };
 
