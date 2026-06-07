@@ -4,24 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { OrderStatusBadge } from "@/components/order-status-badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 interface Row {
   id: string;
@@ -29,17 +12,28 @@ interface Row {
   requested_delivery_date: string;
   submitted_at: string;
   shops: { name: string } | null;
-  order_items: { quantity: number; products: { name: string } | null }[];
+  order_items: { quantity: number; products: { name: string; product_categories: { name: string } | null } | null }[];
 }
 
-const STATUSES = [
-  "pending_request", "specialist_approved", "shop_confirmed", "in_progress",
-  "packaged", "ready_for_courier", "in_transit", "delivered", "rejected", "cancelled",
+const COLS: { label: string; statuses: string[] }[] = [
+  { label: "Pending", statuses: ["pending_request", "specialist_approved"] },
+  { label: "Confirmed", statuses: ["shop_confirmed"] },
+  { label: "In Production", statuses: ["in_progress", "packaged"] },
+  { label: "Ready / Transit", statuses: ["ready_for_courier", "in_transit"] },
+  { label: "Delivered", statuses: ["delivered"] },
 ];
+
+const ACTIVE = [
+  "pending_request", "specialist_approved", "shop_confirmed", "in_progress",
+  "packaged", "ready_for_courier", "in_transit",
+];
+
+function category(r: Row) {
+  return r.order_items[0]?.products?.product_categories?.name ?? "—";
+}
 
 export default function LiveOpsPage() {
   const [rows, setRows] = useState<Row[]>([]);
-  const [filter, setFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -48,15 +42,11 @@ export default function LiveOpsPage() {
       .from("orders")
       .select(
         `id, status, requested_delivery_date, submitted_at,
-         shops ( name ), order_items ( quantity, products ( name ) )`,
+         shops ( name ), order_items ( quantity, products ( name, product_categories ( name ) ) )`,
       )
       .order("submitted_at", { ascending: false });
-    
-    if (error) {
-      toast.error(error.message || "Failed to load orders");
-    } else {
-      setRows((data ?? []) as unknown as Row[]);
-    }
+    if (error) toast.error(error.message || "Failed to load orders");
+    else setRows((data ?? []) as unknown as Row[]);
     setIsLoading(false);
   }, []);
 
@@ -64,76 +54,81 @@ export default function LiveOpsPage() {
     void load();
   }, [load]);
 
-  const visible = filter === "all" ? rows : rows.filter((r) => r.status === filter);
-  const summary = (r: Row) =>
-    r.order_items.map((i) => `${i.products?.name} ×${i.quantity}`).join(", ");
+  const count = (s: string[]) => rows.filter((r) => s.includes(r.status)).length;
+  const stats: { label: string; value: number; color: string }[] = [
+    { label: "Active orders", value: count(ACTIVE), color: "var(--primary)" },
+    { label: "Awaiting approval", value: count(["pending_request"]), color: "var(--st-pend)" },
+    { label: "In transit", value: count(["in_transit"]), color: "var(--st-ready)" },
+    { label: "Delivered", value: count(["delivered"]), color: "var(--st-done)" },
+  ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
+    <div className="mx-auto max-w-7xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Live Operations</h1>
-          <p className="text-sm text-muted-foreground">All orders across every shop.</p>
+          <h1 className="font-display text-2xl">Live Operations</h1>
+          <p className="text-sm text-muted-foreground">
+            {count(ACTIVE)} active orders across every shop · updated live
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={isLoading}>
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
-          </Button>
-        </div>
+        <button
+          onClick={() => void load()}
+          disabled={isLoading}
+          className="flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-sm font-semibold text-muted-foreground transition hover:text-foreground"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Live
+        </button>
       </div>
 
-      <Card>
-        <CardContent className="pt-4">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Shop</TableHead>
-                <TableHead>Delivery</TableHead>
-                <TableHead>Items</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-medium">{r.shops?.name ?? "—"}</TableCell>
-                  <TableCell className="tabular-nums">{r.requested_delivery_date}</TableCell>
-                  <TableCell className="max-w-md truncate text-muted-foreground">{summary(r)}</TableCell>
-                  <TableCell><OrderStatusBadge status={r.status} /></TableCell>
-                </TableRow>
-              ))}
-              {visible.length === 0 && !isLoading && (
-                <TableRow>
-                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                    No orders.
-                  </TableCell>
-                </TableRow>
-              )}
-              {isLoading && (
-                <TableRow>
-                  <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
-                    <Loader2 className="mx-auto h-6 w-6 animate-spin mb-2" />
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {/* Stat cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-2xl border bg-card p-4">
+            <div className="text-[12.5px] font-semibold text-muted-foreground">{s.label}</div>
+            <div className="mt-1 font-display text-3xl tabular-nums" style={{ color: s.color }}>
+              {s.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Kanban */}
+      {isLoading ? (
+        <div className="py-16 text-center text-muted-foreground">
+          <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin" /> Loading…
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          {COLS.map((col) => {
+            const cards = rows.filter((r) => col.statuses.includes(r.status));
+            return (
+              <div key={col.label} className="space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[13px] font-bold">{col.label}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{cards.length}</span>
+                </div>
+                {cards.map((r) => (
+                  <div key={r.id} className="rounded-xl border bg-card p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[13.5px] font-bold">{r.shops?.name ?? "Shop"}</span>
+                      <OrderStatusBadge status={r.status} />
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{category(r)}</span>
+                      <span className="font-mono text-[11px] text-muted-foreground/70">
+                        #{r.id.slice(0, 4).toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {cards.length === 0 && (
+                  <p className="px-1 py-3 text-center text-xs text-muted-foreground">—</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
