@@ -250,6 +250,8 @@ export default function NewRequestPage() {
         </div>
       )}
 
+      <div className="space-y-5 lg:grid lg:grid-cols-[1fr_360px] lg:items-start lg:gap-6 lg:space-y-0">
+        <div className="space-y-5">
       {/* Catalog */}
       {visibleCats
         .filter((c) => !filterCat || c.id === filterCat)
@@ -289,7 +291,8 @@ export default function NewRequestPage() {
           </div>
         );
       })}
-
+        </div>
+        <div className="space-y-5 lg:sticky lg:top-4">
       {/* Cart */}
       <div className="space-y-4 rounded-2xl border bg-card p-4">
             <div className="flex items-center justify-between">
@@ -416,6 +419,9 @@ export default function NewRequestPage() {
           </div>
         </div>
       )}
+
+        </div>
+      </div>
 
       {/* Product modifier dialog */}
       <Dialog open={active != null} onOpenChange={(o) => !o && setActive(null)}>

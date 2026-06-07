@@ -117,13 +117,48 @@ export function MobileShell({
   return (
     <div
       className={cn(
-        "mx-auto flex min-h-screen w-full max-w-md flex-col bg-background text-foreground",
+        "flex min-h-screen w-full bg-background text-foreground lg:flex-row",
         hub && "dark",
       )}
     >
-      <main className="flex-1 px-4 pb-24 pt-3">{children}</main>
+      {/* Left rail — landscape / desktop (≥lg). Bottom tab bar handles smaller. */}
+      <aside className="hidden shrink-0 flex-col border-r bg-card py-4 lg:flex lg:w-56">
+        <div className="px-5 pb-5">
+          <div className="font-display text-lg leading-tight">
+            bobo <em>&amp;</em> wild
+          </div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">HubSync</div>
+        </div>
+        <nav className="flex flex-col gap-1 px-2">
+          {tabs.map((t) => {
+            const Icon = t.icon;
+            const active = pathname === t.href;
+            return (
+              <Link
+                key={t.href}
+                href={t.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
+                  active ? "bg-accent text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                <span>{t.label || "New Request"}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-md items-center justify-around border-t bg-card px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2.5">
+      {/* Main */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <main className="mx-auto w-full max-w-md flex-1 px-4 pb-24 pt-3 md:max-w-3xl lg:max-w-5xl lg:pb-8">
+          {children}
+        </main>
+      </div>
+
+      {/* Bottom tab bar — phone / tablet-portrait (<lg) */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-md items-center justify-around border-t bg-card px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2.5 lg:hidden">
         {tabs.map((t) => {
           const Icon = t.icon;
           const active = pathname === t.href;
