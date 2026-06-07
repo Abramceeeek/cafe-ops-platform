@@ -11,7 +11,7 @@ async function login(page: Page, email: string) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 30_000 });
+  await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 60_000 });
 }
 
 test("login page renders", async ({ page }) => {

@@ -14,7 +14,9 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "npm run dev",
+    // Prod server: routes are prebuilt, so navigation isn't blocked by dev
+    // first-compile. Run `npm run build` once before `npm run test:e2e`.
+    command: "npm run start",
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 120_000,
