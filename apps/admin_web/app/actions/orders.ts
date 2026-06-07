@@ -214,6 +214,7 @@ export async function submitOrder(payload: Payload) {
           order_id: order.id,
           product_id: it.product_id,
           quantity: it.quantity,
+          requested_quantity: it.quantity, // preserve what the shop asked for
           unit: it.unit,
           custom_note: it.custom_note ?? null,
         })
@@ -286,6 +287,9 @@ export async function updateOrderStatus(payload: {
   new_status: string;
   signature_data?: string;
   item_costs?: { id: string; unit_cost: number }[];
+  // Specialist Approve & Edit: adjust line quantities / costs and/or drop lines.
+  item_edits?: { id: string; quantity?: number; unit_cost?: number }[];
+  removed_item_ids?: string[];
 }) {
   const cookieStore = await cookies();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -344,20 +348,41 @@ export async function updateOrderStatus(payload: {
     if (order.assigned_courier !== user.id) return { error: "not_assigned_courier" };
   }
 
-  // Approve & Quote: the specialist sets each line's unit cost as they approve
-  // (§ order_items.unit_cost). Write costs before flipping the status.
-  if (payload.new_status === "specialist_approved" && payload.item_costs?.length) {
-    for (const c of payload.item_costs) {
-      const { error: cErr } = await admin
-        .from("order_items")
-        .update({ unit_cost: c.unit_cost })
-        .eq("id", c.id)
-        .eq("order_id", payload.order_id);
-      if (cErr) return { error: "internal_server_error", details: cErr.message };
+  const patch: Record<string, unknown> = { status: payload.new_status };
+
+  // Approve & Edit: as the specialist approves, they may drop lines, change line
+  // quantities, and set unit costs. Apply all of that before flipping the status,
+  // then flag the order as edited so the shop is told to review the changes.
+  if (payload.new_status === "specialist_approved") {
+    for (const id of payload.removed_item_ids ?? []) {
+      const { error } = await admin.from("order_items").delete().eq("id", id).eq("order_id", payload.order_id);
+      if (error) return { error: "internal_server_error", details: error.message };
     }
+    for (const e of payload.item_edits ?? []) {
+      const upd: Record<string, unknown> = {};
+      if (e.quantity != null) upd.quantity = e.quantity;
+      if (e.unit_cost != null) upd.unit_cost = e.unit_cost;
+      if (Object.keys(upd).length > 0) {
+        const { error } = await admin.from("order_items").update(upd).eq("id", e.id).eq("order_id", payload.order_id);
+        if (error) return { error: "internal_server_error", details: error.message };
+      }
+    }
+    // Legacy cost-only payload (kept for back-compat).
+    for (const c of payload.item_costs ?? []) {
+      const { error } = await admin.from("order_items").update({ unit_cost: c.unit_cost }).eq("id", c.id).eq("order_id", payload.order_id);
+      if (error) return { error: "internal_server_error", details: error.message };
+    }
+    // was_edited = any surviving line whose quantity differs from what was requested, or any removal.
+    const { data: liveItems } = await admin
+      .from("order_items")
+      .select("quantity, requested_quantity")
+      .eq("order_id", payload.order_id);
+    const qtyChanged = (liveItems ?? []).some(
+      (r) => r.requested_quantity != null && Number(r.quantity) !== Number(r.requested_quantity),
+    );
+    patch.was_edited = qtyChanged || (payload.removed_item_ids?.length ?? 0) > 0;
   }
 
-  const patch: Record<string, unknown> = { status: payload.new_status };
   const tsCol = STATUS_TIMESTAMP[payload.new_status];
   if (tsCol) patch[tsCol] = new Date().toISOString();
 

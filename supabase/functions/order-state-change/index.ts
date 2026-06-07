@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { id, status } = await req.json();
+    const { id, status, item_edits, removed_item_ids } = await req.json();
     if (!id || !status) {
       return new Response(JSON.stringify({ error: "id and status are required" }), { status: 400, headers: corsHeaders });
     }
@@ -91,15 +91,36 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: `Cannot transition from ${order.status} to ${status}` }), { status: 400, headers: corsHeaders });
     }
 
-    // 5. Build update
+    // 5. Build update (admin client bypasses RLS; role + state machine already validated)
+    const adminClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const updatePayload: Record<string, any> = { status };
     const tsCol = STATUS_TIMESTAMP[status];
-    if (tsCol) {
-      updatePayload[tsCol] = new Date().toISOString();
+    if (tsCol) updatePayload[tsCol] = new Date().toISOString();
+
+    // Approve & Edit: specialist may drop lines / change qty + cost as they approve.
+    if (status === "specialist_approved") {
+      for (const rid of (removed_item_ids ?? [])) {
+        const { error } = await adminClient.from("order_items").delete().eq("id", rid).eq("order_id", id);
+        if (error) throw error;
+      }
+      for (const e of (item_edits ?? [])) {
+        const upd: Record<string, any> = {};
+        if (e.quantity != null) upd.quantity = e.quantity;
+        if (e.unit_cost != null) upd.unit_cost = e.unit_cost;
+        if (Object.keys(upd).length) {
+          const { error } = await adminClient.from("order_items").update(upd).eq("id", e.id).eq("order_id", id);
+          if (error) throw error;
+        }
+      }
+      const { data: liveItems } = await adminClient
+        .from("order_items").select("quantity, requested_quantity").eq("order_id", id);
+      const qtyChanged = (liveItems ?? []).some(
+        (r: any) => r.requested_quantity != null && Number(r.quantity) !== Number(r.requested_quantity),
+      );
+      updatePayload.was_edited = qtyChanged || (removed_item_ids ?? []).length > 0;
     }
 
-    // 6. Update order (using adminClient to bypass RLS, since we already validated role and state machine)
-    const adminClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    // 6. Update order
     const { error: updateError } = await adminClient.from("orders").update(updatePayload).eq("id", id);
     if (updateError) throw updateError;
 
