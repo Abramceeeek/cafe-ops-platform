@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { roleLabel, CATEGORY_ROLES } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,23 +52,24 @@ interface Product {
   lead_time_hours: number;
   is_available: boolean;
   category_id: string;
+  price: number | null;
 }
-
-const ASSIGNABLE_ROLES = ["meat_specialist", "bread_baker", "pastry_chef", "admin"];
 
 export default function CatalogPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [productOpen, setProductOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
+  const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
 
   // forms
   const [catName, setCatName] = useState("");
-  const [catRole, setCatRole] = useState(ASSIGNABLE_ROLES[0]);
+  const [catRole, setCatRole] = useState(CATEGORY_ROLES[0]);
   const [prodName, setProdName] = useState("");
   const [prodCat, setProdCat] = useState("");
   const [prodUnit, setProdUnit] = useState("kg");
   const [prodLead, setProdLead] = useState(24);
+  const [prodPrice, setProdPrice] = useState("");
 
   async function load() {
     const supabase = createClient();
@@ -75,7 +77,7 @@ export default function CatalogPage() {
       supabase.from("product_categories").select("id,name,assigned_role").order("display_order"),
       supabase
         .from("products")
-        .select("id,name,unit,lead_time_hours,is_available,category_id")
+        .select("id,name,unit,lead_time_hours,is_available,category_id,price")
         .order("name"),
     ]);
     setCategories(cats ?? []);
@@ -107,11 +109,29 @@ export default function CatalogPage() {
       category_id: prodCat,
       unit: prodUnit,
       lead_time_hours: prodLead,
+      price: prodPrice === "" ? null : parseFloat(prodPrice),
     });
     if (error) return toast.error(error.message);
     toast.success(`Product “${prodName}” added`);
     setProdName("");
+    setProdPrice("");
     setProductOpen(false);
+    await load();
+  }
+
+  async function savePrice(p: Product) {
+    const raw = priceEdits[p.id];
+    if (raw == null) return;
+    const val = raw === "" ? null : parseFloat(raw);
+    if (val != null && (isNaN(val) || val < 0)) return toast.error("Invalid price");
+    if (val === (p.price ?? null)) {
+      setPriceEdits((m) => { const n = { ...m }; delete n[p.id]; return n; });
+      return;
+    }
+    const { error } = await createClient().from("products").update({ price: val }).eq("id", p.id);
+    if (error) return toast.error(error.message);
+    toast.success(`${p.name} price updated`);
+    setPriceEdits((m) => { const n = { ...m }; delete n[p.id]; return n; });
     await load();
   }
 
@@ -134,14 +154,14 @@ export default function CatalogPage() {
     await load();
   }
 
-  const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? "—";
-
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Catalog</h1>
-          <p className="text-sm text-muted-foreground">Manage products, categories, and the 86 list.</p>
+          <p className="text-sm text-muted-foreground">
+            Products grouped by category. Set prices here — they drive every order.
+          </p>
         </div>
         <div className="flex gap-2">
           <Dialog open={categoryOpen} onOpenChange={setCategoryOpen}>
@@ -167,9 +187,9 @@ export default function CatalogPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {ASSIGNABLE_ROLES.map((r) => (
+                      {CATEGORY_ROLES.map((r) => (
                         <SelectItem key={r} value={r}>
-                          {r}
+                          {roleLabel(r)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -213,19 +233,29 @@ export default function CatalogPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="prodUnit">Unit</Label>
                     <Input id="prodUnit" value={prodUnit} onChange={(e) => setProdUnit(e.target.value)} required />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="prodLead">Lead time (h)</Label>
+                    <Label htmlFor="prodLead">Lead (h)</Label>
                     <Input
                       id="prodLead"
                       type="number"
                       min={0}
                       value={prodLead}
                       onChange={(e) => setProdLead(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="prodPrice">Price (£)</Label>
+                    <Input
+                      id="prodPrice"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={prodPrice}
+                      onChange={(e) => setProdPrice(e.target.value.replace(/[^0-9.]/g, ""))}
                     />
                   </div>
                 </div>
@@ -238,57 +268,78 @@ export default function CatalogPage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-0">
-          <CardTitle className="text-base">Products ({products.length})</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Lead (h)</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{categoryName(p.category_id)}</TableCell>
-                  <TableCell>{p.unit}</TableCell>
-                  <TableCell className="tabular-nums">{p.lead_time_hours}</TableCell>
-                  <TableCell>
-                    {p.is_available ? (
-                      <Badge variant="secondary">Available</Badge>
-                    ) : (
-                      <Badge variant="destructive">86&apos;d</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => void toggle86(p)} className="mr-2">
-                      {p.is_available ? "86 it" : "Restore"}
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={() => void deleteProduct(p)}>
-                      Delete
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {products.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    No products yet.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      {categories.map((c) => {
+        const prods = products.filter((p) => p.category_id === c.id);
+        return (
+          <Card key={c.id}>
+            <CardHeader className="pb-0">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">{c.name}</CardTitle>
+                <Badge variant="outline">{roleLabel(c.assigned_role)}</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">{prods.length} products</p>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Lead (h)</TableHead>
+                    <TableHead>Price (£)</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {prods.map((p) => (
+                    <TableRow key={p.id}>
+                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell>{p.unit}</TableCell>
+                      <TableCell className="tabular-nums">{p.lead_time_hours}</TableCell>
+                      <TableCell>
+                        <Input
+                          inputMode="decimal"
+                          placeholder="—"
+                          className="h-8 w-20 tabular-nums"
+                          value={priceEdits[p.id] ?? (p.price != null ? String(p.price) : "")}
+                          onChange={(e) =>
+                            setPriceEdits((m) => ({ ...m, [p.id]: e.target.value.replace(/[^0-9.]/g, "") }))
+                          }
+                          onBlur={() => { if (priceEdits[p.id] != null) void savePrice(p); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {p.is_available ? (
+                          <Badge variant="secondary">Available</Badge>
+                        ) : (
+                          <Badge variant="destructive">86&apos;d</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="outline" size="sm" onClick={() => void toggle86(p)} className="mr-2">
+                          {p.is_available ? "86 it" : "Restore"}
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={() => void deleteProduct(p)}>
+                          Delete
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {prods.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                        No products in this category.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

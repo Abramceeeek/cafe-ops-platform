@@ -99,28 +99,34 @@ Deno.serve(async (req) => {
     const tsCol = STATUS_TIMESTAMP[status];
     if (tsCol) updatePayload[tsCol] = new Date().toISOString();
 
-    // Line edits: specialist drops lines / changes qty + cost as they approve;
-    // courier changes qty at handoff (in_transit). Apply for both.
+    // Line edits: specialist drops lines / changes qty as they approve; courier
+    // changes qty at handoff (in_transit). Pricing is admin-owned (set below).
     if (status === "specialist_approved" || status === "in_transit") {
       for (const rid of (removed_item_ids ?? [])) {
         const { error } = await adminClient.from("order_items").delete().eq("id", rid).eq("order_id", id);
         if (error) throw error;
       }
       for (const e of (item_edits ?? [])) {
-        const upd: Record<string, any> = {};
-        if (e.quantity != null) upd.quantity = e.quantity;
-        if (e.unit_cost != null) upd.unit_cost = e.unit_cost;
-        if (Object.keys(upd).length) {
-          const { error } = await adminClient.from("order_items").update(upd).eq("id", e.id).eq("order_id", id);
-          if (error) throw error;
-        }
+        if (e.quantity == null) continue;
+        const { error } = await adminClient.from("order_items").update({ quantity: e.quantity }).eq("id", e.id).eq("order_id", id);
+        if (error) throw error;
       }
     }
 
-    // Specialist approval flags the order as edited so the shop reviews the diff.
+    // On approval: price each surviving line from the admin-set product price and
+    // flag the order edited so the shop reviews the diff.
     if (status === "specialist_approved") {
       const { data: liveItems } = await adminClient
-        .from("order_items").select("quantity, requested_quantity").eq("order_id", id);
+        .from("order_items").select("id, product_id, quantity, requested_quantity").eq("order_id", id);
+      const ids = [...new Set((liveItems ?? []).map((r: any) => r.product_id))];
+      const { data: prods } = ids.length
+        ? await adminClient.from("products").select("id, price").in("id", ids)
+        : { data: [] };
+      const priceById = new Map((prods ?? []).map((p: any) => [p.id, p.price]));
+      for (const it of (liveItems ?? [])) {
+        const { error } = await adminClient.from("order_items").update({ unit_cost: priceById.get(it.product_id) ?? null }).eq("id", it.id);
+        if (error) throw error;
+      }
       const qtyChanged = (liveItems ?? []).some(
         (r: any) => r.requested_quantity != null && Number(r.quantity) !== Number(r.requested_quantity),
       );

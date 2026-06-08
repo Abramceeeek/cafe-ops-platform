@@ -26,6 +26,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import NotificationBell from "@/components/notification-bell";
 import SignOutButton from "@/components/sign-out-button";
 import { MobileShell } from "@/components/mobile-shell";
+import { roleLabel } from "@/lib/roles";
 
 // Shop (FOH/Kitchen) + Hub (Specialists/Courier) use the mobile app shell.
 // Admin keeps the desktop browser/sidebar layout.
@@ -34,7 +35,6 @@ const MOBILE_ROLES = [
   "kitchen_manager",
   "meat_specialist",
   "bread_baker",
-  "pastry_chef",
   "courier",
 ];
 
@@ -51,8 +51,8 @@ const NAV: NavItem[] = [
   { href: "/request", label: "New Request", icon: PlusCircle, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/templates", label: "Templates", icon: Files, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/orders", label: "Orders", icon: ClipboardList, roles: ["foh_manager", "kitchen_manager"] },
-  { href: "/inbox", label: "Inbox", icon: Inbox, roles: ["meat_specialist", "bread_baker", "pastry_chef"] },
-  { href: "/board", label: "To-Do Board", icon: KanbanSquare, roles: ["meat_specialist", "bread_baker", "pastry_chef"] },
+  { href: "/inbox", label: "Inbox", icon: Inbox, roles: ["meat_specialist", "bread_baker"] },
+  { href: "/board", label: "Schedule", icon: KanbanSquare, roles: ["meat_specialist", "bread_baker"] },
   { href: "/manifest", label: "Manifest", icon: Truck, roles: ["courier"] },
   { href: "/live-ops", label: "Live Ops", icon: Activity, roles: ["admin"] },
   { href: "/catalog", label: "Catalog", icon: BookOpen, roles: ["admin"] },
@@ -64,16 +64,6 @@ const READY = new Set([
   "/", "/account", "/catalog", "/request", "/templates", "/inbox", "/orders", "/board", "/manifest",
   "/live-ops", "/finance", "/users",
 ]);
-
-const ROLE_LABEL: Record<string, string> = {
-  foh_manager: "FOH Manager",
-  kitchen_manager: "Kitchen Manager",
-  meat_specialist: "Meat Specialist",
-  bread_baker: "Bread Baker",
-  pastry_chef: "Pastry Chef",
-  courier: "Courier",
-  admin: "Admin",
-};
 
 function Brand() {
   return (
@@ -167,7 +157,7 @@ export function AppShell({
                 <NavLinks items={items} pathname={pathname} onNavigate={() => setOpen(false)} />
               </SheetContent>
             </Sheet>
-            <span className="text-sm text-muted-foreground">{ROLE_LABEL[role] ?? role}</span>
+            <span className="text-sm text-muted-foreground">{roleLabel(role)}</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm text-muted-foreground sm:inline">{email}</span>

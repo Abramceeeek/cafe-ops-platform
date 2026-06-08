@@ -2,18 +2,9 @@ import { Moon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { ModeToggle } from "@/components/mode-toggle";
 import SignOutButton from "@/components/sign-out-button";
+import { roleLabel } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
-
-const ROLE_LABEL: Record<string, string> = {
-  foh_manager: "FOH Manager",
-  kitchen_manager: "Kitchen Manager",
-  meat_specialist: "Meat Specialist",
-  bread_baker: "Bread Baker",
-  pastry_chef: "Pastry Chef",
-  courier: "Courier",
-  admin: "Admin",
-};
 
 function initials(name: string) {
   return name
@@ -51,7 +42,7 @@ export default async function AccountPage() {
           <div className="leading-tight">
             <div className="text-base font-bold">{name}</div>
             <div className="text-sm text-muted-foreground">
-              {ROLE_LABEL[role] ?? role}
+              {roleLabel(role)}
               {shopName ? ` · ${shopName}` : ""}
             </div>
             <div className="text-xs text-muted-foreground">{user?.email}</div>
