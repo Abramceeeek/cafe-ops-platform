@@ -242,10 +242,10 @@ export async function submitOrder(payload: Payload) {
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending_request: ["specialist_approved", "rejected"],
-  // Specialist approval is final — no shop re-confirm. Production starts straight
-  // from approved; the shop is only notified. (shop_confirmed kept for legacy rows.)
-  specialist_approved: ["in_progress", "cancelled"],
-  shop_confirmed: ["in_progress"],
+  // Approve → specialist marks "ready for delivery" (ready_for_courier), skipping
+  // the old production stages. in_progress/packaged kept only for legacy rows.
+  specialist_approved: ["ready_for_courier", "in_progress", "cancelled"],
+  shop_confirmed: ["ready_for_courier", "in_progress"],
   in_progress: ["packaged"],
   packaged: ["ready_for_courier"],
   ready_for_courier: ["in_transit"],
@@ -264,7 +264,8 @@ const TRANSITION_ROLES: Record<string, string[]> = {
   packaged: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   ready_for_courier: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   in_transit: ["courier", "admin"],
-  delivered: ["foh_manager", "kitchen_manager", "admin"],
+  // Courier confirms delivery (single-party courier sign-off in the new flow).
+  delivered: ["courier", "admin"],
 };
 
 const STATUS_TIMESTAMP: Record<string, string> = {
@@ -352,10 +353,10 @@ export async function updateOrderStatus(payload: {
 
   const patch: Record<string, unknown> = { status: payload.new_status };
 
-  // Approve & Edit: as the specialist approves, they may drop lines, change line
-  // quantities, and set unit costs. Apply all of that before flipping the status,
-  // then flag the order as edited so the shop is told to review the changes.
-  if (payload.new_status === "specialist_approved") {
+  // Line edits: the specialist adjusts qty/cost + drops lines as they approve;
+  // the courier adjusts qty at handoff (delivering more/less). Apply both here,
+  // before flipping the status.
+  if (payload.new_status === "specialist_approved" || payload.new_status === "in_transit") {
     for (const id of payload.removed_item_ids ?? []) {
       const { error } = await admin.from("order_items").delete().eq("id", id).eq("order_id", payload.order_id);
       if (error) return { error: "internal_server_error", details: error.message };
@@ -369,6 +370,10 @@ export async function updateOrderStatus(payload: {
         if (error) return { error: "internal_server_error", details: error.message };
       }
     }
+  }
+
+  // Specialist approval flags the order as edited so the shop reviews the diff.
+  if (payload.new_status === "specialist_approved") {
     // Legacy cost-only payload (kept for back-compat).
     for (const c of payload.item_costs ?? []) {
       const { error } = await admin.from("order_items").update({ unit_cost: c.unit_cost }).eq("id", c.id).eq("order_id", payload.order_id);
