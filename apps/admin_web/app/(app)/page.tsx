@@ -106,7 +106,7 @@ export default async function DashboardPage() {
 
         <section>
           <div className="mb-2.5 flex items-center justify-between px-0.5">
-            <h2 className="font-display text-lg">Needs your action</h2>
+            <h2 className="font-display text-lg">Recently approved</h2>
             {needsAction.length > 0 && (
               <span
                 className="rounded-full px-2 py-0.5 text-xs font-bold"
@@ -119,7 +119,7 @@ export default async function DashboardPage() {
           {needsAction.length === 0 ? (
             <Card>
               <CardContent className="py-6 text-center text-sm text-muted-foreground">
-                Nothing waiting on you.
+                No recent approvals.
               </CardContent>
             </Card>
           ) : (
@@ -135,10 +135,12 @@ export default async function DashboardPage() {
                       <OrderStatusBadge status={o.status} />
                     </div>
                     <p className="text-sm font-semibold">Hub approved &amp; priced your request</p>
-                    <p className="text-xs text-muted-foreground">Delivery {fmtDate(o.requested_delivery_date)}</p>
-                    <Button asChild className="w-full">
+                    <p className="text-xs text-muted-foreground">
+                      Now in production · delivery {fmtDate(o.requested_delivery_date)}
+                    </p>
+                    <Button asChild variant="outline" className="w-full">
                       <Link href="/orders">
-                        Review &amp; Final Confirm <ChevronRight className="h-4 w-4" />
+                        View order <ChevronRight className="h-4 w-4" />
                       </Link>
                     </Button>
                   </CardContent>
