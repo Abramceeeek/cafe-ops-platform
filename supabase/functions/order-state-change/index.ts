@@ -12,9 +12,10 @@ const corsHeaders = {
 // to call this function, any change here must be mirrored there and vice-versa.
 const ORDER_SPEC: Record<string, string[]> = {
   pending_request: ["specialist_approved", "rejected"],
-  // Specialist approval is final (no shop re-confirm); production starts from approved.
-  specialist_approved: ["in_progress", "cancelled"],
-  shop_confirmed: ["in_progress"],
+  // Approve → specialist marks "ready for delivery" (ready_for_courier), skipping
+  // the old production stages. in_progress/packaged kept only for legacy rows.
+  specialist_approved: ["ready_for_courier", "in_progress", "cancelled"],
+  shop_confirmed: ["ready_for_courier", "in_progress"],
   in_progress: ["packaged"],
   packaged: ["ready_for_courier"],
   ready_for_courier: ["in_transit"],
@@ -33,8 +34,8 @@ const TRANSITION_ROLES: Record<string, string[]> = {
   packaged: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   ready_for_courier: ["meat_specialist", "bread_baker", "pastry_chef", "admin"],
   in_transit: ["courier", "admin"],
-  // Two-party sign-off: the SHOP confirms receipt (delivered), not the courier.
-  delivered: ["foh_manager", "kitchen_manager", "admin"],
+  // Courier confirms delivery (single-party courier sign-off in the new flow).
+  delivered: ["courier", "admin"],
 };
 
 const STATUS_TIMESTAMP: Record<string, string> = {
@@ -98,8 +99,9 @@ Deno.serve(async (req) => {
     const tsCol = STATUS_TIMESTAMP[status];
     if (tsCol) updatePayload[tsCol] = new Date().toISOString();
 
-    // Approve & Edit: specialist may drop lines / change qty + cost as they approve.
-    if (status === "specialist_approved") {
+    // Line edits: specialist drops lines / changes qty + cost as they approve;
+    // courier changes qty at handoff (in_transit). Apply for both.
+    if (status === "specialist_approved" || status === "in_transit") {
       for (const rid of (removed_item_ids ?? [])) {
         const { error } = await adminClient.from("order_items").delete().eq("id", rid).eq("order_id", id);
         if (error) throw error;
@@ -113,6 +115,10 @@ Deno.serve(async (req) => {
           if (error) throw error;
         }
       }
+    }
+
+    // Specialist approval flags the order as edited so the shop reviews the diff.
+    if (status === "specialist_approved") {
       const { data: liveItems } = await adminClient
         .from("order_items").select("quantity, requested_quantity").eq("order_id", id);
       const qtyChanged = (liveItems ?? []).some(

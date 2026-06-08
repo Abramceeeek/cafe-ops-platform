@@ -12,7 +12,7 @@ import {
   Files,
   User,
   Inbox,
-  LayoutGrid,
+  CalendarDays,
   Truck,
   type LucideIcon,
 } from "lucide-react";
@@ -37,7 +37,7 @@ const SHOP_TABS: Tab[] = [
 // Hub App — Specialists (dark). spec-screens HubTabs.
 const SPECIALIST_TABS: Tab[] = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
-  { href: "/board", label: "Board", icon: LayoutGrid },
+  { href: "/board", label: "Schedule", icon: CalendarDays },
   { href: "/account", label: "Account", icon: User },
 ];
 
@@ -75,7 +75,7 @@ export function MobileShell({
       meat_specialist: ["pending_request", "shop_confirmed"],
       bread_baker: ["pending_request", "shop_confirmed"],
       pastry_chef: ["pending_request", "shop_confirmed"],
-      courier: ["ready_for_courier"],
+      courier: ["specialist_approved", "ready_for_courier"],
       admin: [],
     };
     const MSG: Record<string, string> = {
