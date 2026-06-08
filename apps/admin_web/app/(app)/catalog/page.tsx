@@ -58,6 +58,7 @@ interface Product {
 export default function CatalogPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [role, setRole] = useState("");
   const [productOpen, setProductOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
@@ -73,6 +74,13 @@ export default function CatalogPage() {
 
   async function load() {
     const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      const { data: p } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      setRole((p?.role as string) ?? "");
+    }
     const [{ data: cats }, { data: prods }] = await Promise.all([
       supabase.from("product_categories").select("id,name,assigned_role").order("display_order"),
       supabase
@@ -154,16 +162,24 @@ export default function CatalogPage() {
     await load();
   }
 
+  // Admin sees the whole catalog; a specialist (Pitmaster/Baker) manages only the
+  // products in their own categories. RLS enforces the same scoping server-side.
+  const isAdmin = role === "admin";
+  const visibleCategories = isAdmin ? categories : categories.filter((c) => c.assigned_role === role);
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Catalog</h1>
           <p className="text-sm text-muted-foreground">
-            Products grouped by category. Set prices here — they drive every order.
+            {isAdmin
+              ? "Products grouped by category. Set prices here — they drive every order."
+              : "Your items — add, price, and remove. Prices drive every order, so keep them current."}
           </p>
         </div>
         <div className="flex gap-2">
+          {isAdmin && (
           <Dialog open={categoryOpen} onOpenChange={setCategoryOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
@@ -201,6 +217,7 @@ export default function CatalogPage() {
               </form>
             </DialogContent>
           </Dialog>
+          )}
 
           <Dialog open={productOpen} onOpenChange={setProductOpen}>
             <DialogTrigger asChild>
@@ -225,7 +242,7 @@ export default function CatalogPage() {
                       <SelectValue placeholder="Choose a category…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {categories.map((c) => (
+                      {visibleCategories.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
                           {c.name}
                         </SelectItem>
@@ -268,7 +285,7 @@ export default function CatalogPage() {
         </div>
       </div>
 
-      {categories.map((c) => {
+      {visibleCategories.map((c) => {
         const prods = products.filter((p) => p.category_id === c.id);
         return (
           <Card key={c.id}>

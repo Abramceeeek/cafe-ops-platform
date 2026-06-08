@@ -13,6 +13,7 @@ import {
   User,
   Inbox,
   CalendarDays,
+  BookOpen,
   Truck,
   type LucideIcon,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const SHOP_TABS: Tab[] = [
 const SPECIALIST_TABS: Tab[] = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/board", label: "Schedule", icon: CalendarDays },
+  { href: "/catalog", label: "Catalog", icon: BookOpen },
   { href: "/account", label: "Account", icon: User },
 ];
 
