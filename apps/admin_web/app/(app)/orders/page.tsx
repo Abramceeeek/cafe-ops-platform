@@ -266,7 +266,7 @@ export default function OrdersPage() {
                           <div className="mb-3 space-y-1 rounded-xl bg-secondary/60 p-3">
                             {o.was_edited && (
                               <div className="mb-1 text-[11px] font-bold" style={{ color: "var(--st-pend)" }}>
-                                The Hub edited this order — review the changes below.
+                                The Hub edited this order before approving — quantities updated below.
                               </div>
                             )}
                             {o.order_items.map((it, idx) => {
@@ -301,12 +301,9 @@ export default function OrdersPage() {
                               </span>
                             </div>
                           </div>
-                          <button
-                            onClick={() => void transition(o.id, "shop_confirmed", "Order confirmed")}
-                            className="flex w-full items-center justify-center rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
-                          >
-                            Final Confirm
-                          </button>
+                          <div className="text-center text-[11px] text-muted-foreground">
+                            Approved &amp; priced by the Hub — now in production. No action needed.
+                          </div>
                         </>
                       )}
                       {o.status === "in_transit" && (

@@ -80,7 +80,7 @@ export function MobileShell({
     };
     const MSG: Record<string, string> = {
       pending_request: "New request received",
-      specialist_approved: "Order approved — confirm it",
+      specialist_approved: "Order approved by the Hub",
       shop_confirmed: "Order confirmed",
       in_progress: "Order in production",
       packaged: "Order packaged",
