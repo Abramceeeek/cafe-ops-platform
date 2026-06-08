@@ -242,7 +242,9 @@ export async function submitOrder(payload: Payload) {
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending_request: ["specialist_approved", "rejected"],
-  specialist_approved: ["shop_confirmed", "cancelled"],
+  // Specialist approval is final — no shop re-confirm. Production starts straight
+  // from approved; the shop is only notified. (shop_confirmed kept for legacy rows.)
+  specialist_approved: ["in_progress", "cancelled"],
   shop_confirmed: ["in_progress"],
   in_progress: ["packaged"],
   packaged: ["ready_for_courier"],

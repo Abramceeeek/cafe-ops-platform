@@ -18,14 +18,16 @@ interface BoardRow {
   }[];
 }
 
-const COLUMNS: { status: string; label: string }[] = [
-  { status: "shop_confirmed", label: "Confirmed" },
-  { status: "in_progress", label: "In Production" },
-  { status: "packaged", label: "Packaged" },
-  { status: "ready_for_courier", label: "Ready" },
+const COLUMNS: { statuses: string[]; label: string }[] = [
+  // Approved is final (no shop re-confirm); shop_confirmed kept for legacy rows.
+  { statuses: ["specialist_approved", "shop_confirmed"], label: "Approved" },
+  { statuses: ["in_progress"], label: "In Production" },
+  { statuses: ["packaged"], label: "Packaged" },
+  { statuses: ["ready_for_courier"], label: "Ready" },
 ];
 
 const NEXT: Record<string, string> = {
+  specialist_approved: "in_progress",
   shop_confirmed: "in_progress",
   in_progress: "packaged",
   packaged: "ready_for_courier",
@@ -63,7 +65,7 @@ export default function BoardPage() {
       )
       .in(
         "status",
-        COLUMNS.map((c) => c.status),
+        COLUMNS.flatMap((c) => c.statuses),
       )
       .order("requested_delivery_date", { ascending: true });
     setRows((data ?? []) as unknown as BoardRow[]);
@@ -116,10 +118,10 @@ export default function BoardPage() {
       <div className="-mx-4 overflow-x-auto px-4 pb-2">
         <div className="flex gap-3" style={{ minWidth: "min-content" }}>
           {COLUMNS.map((col) => {
-            const cards = visible.filter((r) => r.status === col.status);
+            const cards = visible.filter((r) => col.statuses.includes(r.status));
             return (
               <div
-                key={col.status}
+                key={col.label}
                 className="flex w-[250px] shrink-0 flex-col rounded-2xl border bg-card"
               >
                 <div className="flex items-center justify-between border-b border-border px-3.5 py-3">

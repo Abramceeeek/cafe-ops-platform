@@ -12,7 +12,8 @@ const corsHeaders = {
 // to call this function, any change here must be mirrored there and vice-versa.
 const ORDER_SPEC: Record<string, string[]> = {
   pending_request: ["specialist_approved", "rejected"],
-  specialist_approved: ["shop_confirmed", "cancelled"],
+  // Specialist approval is final (no shop re-confirm); production starts from approved.
+  specialist_approved: ["in_progress", "cancelled"],
   shop_confirmed: ["in_progress"],
   in_progress: ["packaged"],
   packaged: ["ready_for_courier"],
