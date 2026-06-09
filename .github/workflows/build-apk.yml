@@ -55,13 +55,17 @@ jobs:
           cat >> android/build.gradle.kts <<'EOF'
 
           // Some plugins (e.g. printing) hardcode an older compileSdk than their
-          // androidx deps require (34+). Force every plugin module to 35.
+          // androidx deps require (34+). Force every not-yet-evaluated plugin
+          // module to 35. Skip already-evaluated projects (e.g. :app, pre-evaluated
+          // by Flutter's evaluationDependsOn) to avoid afterEvaluate errors.
           subprojects {
-              afterEvaluate {
-                  project.extensions.findByName("android")?.let { ext ->
-                      try {
-                          ext.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(ext, 35)
-                      } catch (e: Exception) {}
+              if (!state.executed) {
+                  afterEvaluate {
+                      project.extensions.findByName("android")?.let { ext ->
+                          try {
+                              ext.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(ext, 35)
+                          } catch (e: Exception) {}
+                      }
                   }
               }
           }
