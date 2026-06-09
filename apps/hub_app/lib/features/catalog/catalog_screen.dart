@@ -280,7 +280,7 @@ class _ProductDialogState extends State<_ProductDialog> {
           children: [
             if (widget.categories != null)
               DropdownButtonFormField<String>(
-                value: _categoryId,
+                initialValue: _categoryId,
                 decoration: const InputDecoration(labelText: 'Category'),
                 items: widget.categories!
                     .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
