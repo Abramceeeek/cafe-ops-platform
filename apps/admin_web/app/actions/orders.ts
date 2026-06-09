@@ -24,6 +24,7 @@ export interface CartItem {
 export interface Payload {
   shop_id: string;
   requested_delivery_date: string; // YYYY-MM-DD
+  emergency?: boolean; // past-cutoff / short-lead emergency order (waives lead-time floor)
   items: CartItem[];
 }
 
@@ -163,11 +164,13 @@ export async function submitOrder(payload: Payload) {
     item.unit = real.unit;
   }
 
-  // Lead time validation
+  // Lead time validation. Emergency orders waive the cut-off / lead-time floor
+  // (they're flagged is_emergency and the specialist is warned), but quantity
+  // and the category/security checks above still apply.
   const errors: string[] = [];
   for (const it of payload.items) {
     if (it.quantity <= 0) errors.push(`Quantity must be positive for ${it.product_id}.`);
-    if (!isDeliveryDateValid(payload.requested_delivery_date, now, cutoffPassed, it.lead_time_hours)) {
+    if (!payload.emergency && !isDeliveryDateValid(payload.requested_delivery_date, now, cutoffPassed, it.lead_time_hours)) {
       errors.push(`${it.product_id} needs ${it.lead_time_hours}h lead time; earliest delivery ${earliestDate(now, it.lead_time_hours, cutoffPassed)}.`);
     }
   }
@@ -184,6 +187,7 @@ export async function submitOrder(payload: Payload) {
     p_submitted_by: user.id,
     p_requested_delivery_date: payload.requested_delivery_date,
     p_groups: groups,
+    p_is_emergency: !!payload.emergency,
   });
   if (!rpcErr) {
     return { ok: true, order_ids: (rpcRes as { order_ids?: string[] } | null)?.order_ids ?? [] };
@@ -202,6 +206,7 @@ export async function submitOrder(payload: Payload) {
         submitted_by: user.id,
         status: "pending_request",
         requested_delivery_date: payload.requested_delivery_date,
+        is_emergency: !!payload.emergency,
       })
       .select("id")
       .single();

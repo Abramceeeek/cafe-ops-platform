@@ -147,14 +147,30 @@ export default function NewRequestPage() {
     [cart],
   );
   const minDate = earliestDate(serverNow, maxLead);
+  // Date picker floor = tomorrow, so an earlier-than-normal date is *selectable*
+  // and flagged as an emergency rather than blocked outright.
+  const floorDate = useMemo(() => {
+    const d = new Date(Date.UTC(serverNow.getUTCFullYear(), serverNow.getUTCMonth(), serverNow.getUTCDate()));
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, [serverNow]);
+  const isEmergency = !!deliveryDate && deliveryDate < minDate;
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
 
   // only categories the role can actually order from (products are RLS-scoped, categories are not)
   const visibleCats = categories.filter((c) => products.some((p) => p.category_id === c.id));
 
-  async function submit() {
+  function submit() {
     if (!shopId || !userId) return toast.error("Your profile has no shop assigned.");
     if (cart.length === 0) return toast.error("Cart is empty.");
     if (!deliveryDate) return toast.error("Pick a delivery date.");
+    if (isEmergency) return setEmergencyOpen(true);
+    void doSubmit(false);
+  }
+
+  async function doSubmit(emergency: boolean) {
+    if (!shopId) return;
+    setEmergencyOpen(false);
     setSubmitting(true);
     const items = cart.map((l) => ({
       product_id: l.product.id,
@@ -170,13 +186,13 @@ export default function NewRequestPage() {
       })),
     }));
     try {
-      const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, items });
+      const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, emergency, items });
       if (response.error) {
         const details = Array.isArray(response.details) ? ": " + response.details.join(", ") : (response.details ? ": " + response.details : "");
         return toast.error(response.error + details);
       }
       const ids = response.order_ids ?? [];
-      toast.success(`Request submitted — ${ids.length} order(s) created.`);
+      toast.success(emergency ? `Emergency order submitted — ${ids.length} order(s).` : `Request submitted — ${ids.length} order(s) created.`);
       setCart([]);
       setDeliveryDate("");
     } catch (e) {
@@ -370,13 +386,19 @@ export default function NewRequestPage() {
           <Input
             id="ddate"
             type="date"
-            min={minDate}
+            min={floorDate}
             value={deliveryDate}
             onChange={(e) => setDeliveryDate(e.target.value)}
           />
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" /> Earliest: {minDate} (4:00 PM London cut-off)
-          </p>
+          {isEmergency ? (
+            <p className="flex items-center gap-1 text-xs font-semibold" style={{ color: "var(--st-bad)" }}>
+              <Clock className="h-3 w-3" /> Before the {minDate} cut-off — this will be an emergency order.
+            </p>
+          ) : (
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3" /> Earliest: {minDate} (4:00 PM London cut-off)
+            </p>
+          )}
         </div>
 
         <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-dashed border-input bg-secondary p-3 text-xs text-muted-foreground">
@@ -400,6 +422,37 @@ export default function NewRequestPage() {
           )}
         </button>
       </div>
+
+      {/* Emergency-order confirmation */}
+      <Dialog open={emergencyOpen} onOpenChange={setEmergencyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle style={{ color: "var(--st-bad)" }}>⚠ Emergency order</DialogTitle>
+            <DialogDescription>
+              You&rsquo;re ordering for {deliveryDate}, before the {minDate} cut-off. This is an
+              <strong> emergency order</strong>: it has a <strong>high chance of not being approved</strong>,
+              is treated as the last resort, and may not be produced in time. Please
+              <strong> re-check with the specialist first</strong> before submitting.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button
+              onClick={() => setEmergencyOpen(false)}
+              className="rounded-xl border px-4 py-2.5 text-sm font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={submitting}
+              onClick={() => void doSubmit(true)}
+              className="rounded-xl px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              style={{ background: "var(--st-bad)" }}
+            >
+              Submit emergency order
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Save as template */}
       {cart.length > 0 && (

@@ -18,6 +18,7 @@ interface InboxRow {
   id: string;
   requested_delivery_date: string;
   submitted_at: string;
+  is_emergency?: boolean;
   shops: { name: string } | null;
   order_items: Item[];
 }
@@ -57,7 +58,7 @@ export default function InboxPage() {
     const { data } = await supabase
       .from("orders")
       .select(
-        `id, requested_delivery_date, submitted_at,
+        `id, requested_delivery_date, submitted_at, is_emergency,
          shops ( name ),
          order_items (
            id, quantity, unit, custom_note,
@@ -177,12 +178,22 @@ export default function InboxPage() {
                   <span className="text-base font-bold">{r.shops?.name ?? "Shop"}</span>
                   <span className="font-mono text-xs text-muted-foreground">#{r.id.slice(0, 4).toUpperCase()}</span>
                 </div>
-                <span
-                  className="rounded-full border px-2 py-0.5 text-[11px] font-bold"
-                  style={{ color: `var(--st-${u.key})`, background: `var(--st-${u.key}-bg)`, borderColor: `var(--st-${u.key}-line)` }}
-                >
-                  {u.label}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {r.is_emergency && (
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-primary-foreground"
+                      style={{ background: "var(--st-bad)" }}
+                    >
+                      EMERGENCY
+                    </span>
+                  )}
+                  <span
+                    className="rounded-full border px-2 py-0.5 text-[11px] font-bold"
+                    style={{ color: `var(--st-${u.key})`, background: `var(--st-${u.key}-bg)`, borderColor: `var(--st-${u.key}-line)` }}
+                  >
+                    {u.label}
+                  </span>
+                </div>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 for {fmtDate(r.requested_delivery_date)} · {items.length} line{items.length !== 1 ? "s" : ""}
