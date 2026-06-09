@@ -25,6 +25,7 @@ export interface Payload {
   shop_id: string;
   requested_delivery_date: string; // YYYY-MM-DD
   emergency?: boolean; // past-cutoff / short-lead emergency order (waives lead-time floor)
+  idempotency_key?: string; // one per submit attempt — dedupes network retries
   items: CartItem[];
 }
 
@@ -188,6 +189,7 @@ export async function submitOrder(payload: Payload) {
     p_requested_delivery_date: payload.requested_delivery_date,
     p_groups: groups,
     p_is_emergency: !!payload.emergency,
+    p_idempotency_key: payload.idempotency_key ?? null,
   });
   if (!rpcErr) {
     return { ok: true, order_ids: (rpcRes as { order_ids?: string[] } | null)?.order_ids ?? [] };
@@ -207,6 +209,7 @@ export async function submitOrder(payload: Payload) {
         status: "pending_request",
         requested_delivery_date: payload.requested_delivery_date,
         is_emergency: !!payload.emergency,
+        idempotency_key: payload.idempotency_key ?? null,
       })
       .select("id")
       .single();
@@ -299,6 +302,7 @@ export async function updateOrderStatus(payload: {
   // Specialist Approve & Edit: adjust line quantities / costs and/or drop lines.
   item_edits?: { id: string; quantity?: number; unit_cost?: number }[];
   removed_item_ids?: string[];
+  rejection_reason?: string; // why the specialist declined (on new_status === 'rejected')
 }) {
   const cookieStore = await cookies();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -358,6 +362,7 @@ export async function updateOrderStatus(payload: {
   // route, so transitions aren't gated on assigned_courier (read is already global).
 
   const patch: Record<string, unknown> = { status: payload.new_status };
+  if (payload.new_status === "rejected") patch.rejection_reason = payload.rejection_reason?.trim() || null;
 
   // Line edits: the specialist adjusts quantities + drops lines as they approve;
   // the courier adjusts quantities at handoff (delivering more/less). Apply both
