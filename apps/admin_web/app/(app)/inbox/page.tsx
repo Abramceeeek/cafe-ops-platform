@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { RefreshCw, Check, X, ChevronRight, Trash2, Undo2 } from "lucide-react";
+import { RefreshCw, Check, X, ChevronRight, Trash2, Undo2, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { updateOrderStatus } from "@/app/actions/orders";
 
@@ -79,7 +79,10 @@ export default function InboxPage() {
 
   const mine = (r: InboxRow) =>
     r.order_items.filter((i) => i.products?.product_categories?.assigned_role === role);
-  const visible = rows.filter((r) => mine(r).length > 0);
+  // Emergency requests float to the top (stable sort keeps the date order within).
+  const visible = rows
+    .filter((r) => mine(r).length > 0)
+    .sort((a, b) => Number(b.is_emergency ?? false) - Number(a.is_emergency ?? false));
 
   function openQuote(r: InboxRow) {
     if (openId === r.id) return setOpenId(null);
@@ -173,23 +176,28 @@ export default function InboxPage() {
         const items = mine(r);
         const open = openId === r.id;
         return (
-          <div key={r.id} className="flex overflow-hidden rounded-2xl border bg-card">
-            <div className="w-[5px] shrink-0" style={{ background: `var(--st-${u.key})` }} />
+          <div
+            key={r.id}
+            className="flex overflow-hidden rounded-2xl border bg-card"
+            style={r.is_emergency ? { borderColor: "var(--st-bad)", boxShadow: "0 0 0 1px var(--st-bad)" } : undefined}
+          >
+            <div className="w-[5px] shrink-0" style={{ background: r.is_emergency ? "var(--st-bad)" : `var(--st-${u.key})` }} />
             <div className="min-w-0 flex-1 p-4">
+              {r.is_emergency && (
+                <div
+                  className="-mx-4 -mt-4 mb-3 flex items-start gap-1.5 px-4 py-2 text-[11.5px] font-bold leading-snug text-white"
+                  style={{ background: "var(--st-bad)" }}
+                >
+                  <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                  <span>EMERGENCY · placed after the cut-off — may not be fulfillable. Confirm with the shop before approving.</span>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-base font-bold">{r.shops?.name ?? "Shop"}</span>
                   <span className="font-mono text-xs text-muted-foreground">#{r.id.slice(0, 4).toUpperCase()}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {r.is_emergency && (
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-primary-foreground"
-                      style={{ background: "var(--st-bad)" }}
-                    >
-                      EMERGENCY
-                    </span>
-                  )}
                   <span
                     className="rounded-full border px-2 py-0.5 text-[11px] font-bold"
                     style={{ color: `var(--st-${u.key})`, background: `var(--st-${u.key}-bg)`, borderColor: `var(--st-${u.key}-line)` }}
