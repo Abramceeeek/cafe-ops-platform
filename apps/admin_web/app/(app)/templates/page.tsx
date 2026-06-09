@@ -202,6 +202,29 @@ export default function TemplatesPage() {
               </div>
             </div>
 
+            {t.order_template_items.length > 0 && (
+              <div className="mt-3 space-y-1 border-t border-border pt-3">
+                {t.order_template_items.map((i) => {
+                  const mods = i.order_template_item_modifiers
+                    .map((m) => m.modifier_options?.name)
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <div key={i.id} className="flex items-start justify-between gap-2 text-[13px]">
+                      <span className={"min-w-0 " + (i.products ? "" : "italic text-muted-foreground line-through")}>
+                        <span className="font-medium">{i.products?.name ?? "Unavailable item"}</span>
+                        {mods && <span className="text-muted-foreground"> · {mods}</span>}
+                        {i.custom_note && <span className="italic text-muted-foreground"> — &ldquo;{i.custom_note}&rdquo;</span>}
+                      </span>
+                      <span className="shrink-0 font-mono">
+                        {i.quantity} {i.products?.unit ?? ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {m.unavailable > 0 && (
               <div
                 className="mt-3 flex items-center gap-2 rounded-lg border p-2.5"
