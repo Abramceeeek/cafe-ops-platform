@@ -20,6 +20,7 @@ interface OrderRow {
   requested_delivery_date: string;
   submitted_at: string;
   was_edited?: boolean;
+  rejection_reason?: string | null;
   order_items: {
     quantity: number;
     requested_quantity: number | null;
@@ -84,7 +85,7 @@ export default function OrdersPage() {
     const { data } = await createClient()
       .from("orders")
       .select(
-        `id, status, requested_delivery_date, submitted_at, was_edited,
+        `id, status, requested_delivery_date, submitted_at, was_edited, rejection_reason,
          order_items ( quantity, requested_quantity, unit, unit_cost, products ( name, product_categories ( name ) ) )`,
       )
       .order("requested_delivery_date", { ascending: false });
@@ -258,6 +259,13 @@ export default function OrdersPage() {
                         </div>
                       )}
                       {o.status === "delivered" && <ReceiptButton orderId={o.id} />}
+                    </div>
+                  )}
+                  {o.status === "rejected" && o.rejection_reason && (
+                    <div className="px-4 pb-3">
+                      <div className="rounded-xl px-3 py-2 text-[12.5px]" style={{ color: "var(--st-bad)", background: "var(--st-bad-bg)" }}>
+                        Declined — {o.rejection_reason}
+                      </div>
                     </div>
                   )}
                 </div>

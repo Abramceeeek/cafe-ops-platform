@@ -43,6 +43,7 @@ export default function InboxPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [qtys, setQtys] = useState<Record<string, string>>({});
   const [removed, setRemoved] = useState<Record<string, boolean>>({});
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -90,6 +91,7 @@ export default function InboxPage() {
     }
     setQtys(q);
     setRemoved(rm);
+    setReason("");
     setOpenId(r.id);
   }
 
@@ -122,8 +124,9 @@ export default function InboxPage() {
   }
 
   async function reject(r: InboxRow) {
+    if (!reason.trim()) return toast.error("Add a short reason so the shop knows why.");
     setBusy(true);
-    const res = await updateOrderStatus({ order_id: r.id, new_status: "rejected" });
+    const res = await updateOrderStatus({ order_id: r.id, new_status: "rejected", rejection_reason: reason });
     setBusy(false);
     if (res.error) return toast.error(res.error + (res.details ? ": " + res.details : ""));
     toast.success("Request rejected");
@@ -275,6 +278,13 @@ export default function InboxPage() {
                     <span className="font-display text-base">Order total</span>
                     <span className="font-mono text-lg font-bold text-primary">£{total(r).toFixed(2)}</span>
                   </div>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Reason (required only if rejecting)…"
+                    rows={2}
+                    className="mt-3 w-full resize-none rounded-lg border border-input bg-card px-2.5 py-1.5 text-[13px] outline-none"
+                  />
                   <div className="mt-3 flex gap-2.5">
                     <button
                       disabled={busy}

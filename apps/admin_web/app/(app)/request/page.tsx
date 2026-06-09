@@ -156,6 +156,9 @@ export default function NewRequestPage() {
   }, [serverNow]);
   const isEmergency = !!deliveryDate && deliveryDate < minDate;
   const [emergencyOpen, setEmergencyOpen] = useState(false);
+  // One idempotency key per submission intent — reused across retries so a flaky
+  // network can't create duplicate orders; rotated after a successful submit.
+  const [submitKey, setSubmitKey] = useState(() => crypto.randomUUID());
 
   // only categories the role can actually order from (products are RLS-scoped, categories are not)
   const visibleCats = categories.filter((c) => products.some((p) => p.category_id === c.id));
@@ -186,7 +189,7 @@ export default function NewRequestPage() {
       })),
     }));
     try {
-      const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, emergency, items });
+      const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, emergency, idempotency_key: submitKey, items });
       if (response.error) {
         const details = Array.isArray(response.details) ? ": " + response.details.join(", ") : (response.details ? ": " + response.details : "");
         return toast.error(response.error + details);
@@ -195,6 +198,7 @@ export default function NewRequestPage() {
       toast.success(emergency ? `Emergency order submitted — ${ids.length} order(s).` : `Request submitted — ${ids.length} order(s) created.`);
       setCart([]);
       setDeliveryDate("");
+      setSubmitKey(crypto.randomUUID());
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Submit failed — try again.");
     } finally {
