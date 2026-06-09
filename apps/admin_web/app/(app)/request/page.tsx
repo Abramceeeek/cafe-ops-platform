@@ -404,7 +404,7 @@ export default function NewRequestPage() {
         <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-dashed border-input bg-secondary p-3 text-xs text-muted-foreground">
           <Send className="h-4 w-4 shrink-0" />
           <span>
-            Costs are set by the Hub specialist at approval — you&rsquo;ll review prices at Final Confirm.
+            Prices are set in the catalog and applied automatically when the Hub approves your order.
           </span>
         </div>
 
