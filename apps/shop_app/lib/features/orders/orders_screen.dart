@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/realtime.dart';
 
@@ -157,6 +158,11 @@ class OrdersScreen extends ConsumerWidget {
                               child: Text('Declined — ${o.rejectionReason}', style: TextStyle(color: Colors.red.shade900, fontSize: 12.5)),
                             ),
                           ),
+                        if (o.status == 'delivered')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _ReceiptButton(orderId: o.id),
+                          ),
                       ],
                     ),
                   ),
@@ -166,6 +172,56 @@ class OrdersScreen extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// Fetches a signed receipt URL via the `get-receipt` edge function and opens it
+/// in the browser/PDF viewer. Mirrors the web `ReceiptButton`.
+class _ReceiptButton extends ConsumerStatefulWidget {
+  final String orderId;
+  const _ReceiptButton({required this.orderId});
+  @override
+  ConsumerState<_ReceiptButton> createState() => _ReceiptButtonState();
+}
+
+class _ReceiptButtonState extends ConsumerState<_ReceiptButton> {
+  bool _loading = false;
+
+  Future<void> _open() async {
+    setState(() => _loading = true);
+    try {
+      final res = await ref
+          .read(supabaseProvider)
+          .functions
+          .invoke('get-receipt', body: {'order_id': widget.orderId});
+      final url = (res.data as Map?)?['url'] as String?;
+      if (url == null || url.isEmpty) {
+        _toast('Receipt not ready yet.');
+        return;
+      }
+      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!ok) _toast('Could not open the receipt.');
+    } catch (_) {
+      _toast('Receipt not ready yet.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      icon: _loading
+          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.receipt_long, size: 18),
+      label: const Text('Receipt'),
+      onPressed: _loading ? null : _open,
     );
   }
 }
