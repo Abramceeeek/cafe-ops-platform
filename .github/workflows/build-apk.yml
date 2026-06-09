@@ -35,6 +35,11 @@ jobs:
       - name: Generate android platform files
         working-directory: apps/${{ matrix.app }}
         run: flutter create --platforms=android --org com.hubsync .
+      - name: Generate launcher icons (brand logo)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
       - name: Build debug APK
         working-directory: apps/${{ matrix.app }}
         run: >-
