@@ -42,13 +42,13 @@ jobs:
           OLD="com.hubsync.${{ matrix.app }}"
           NEW="com.hubsync.${SHORT}"
           echo "Pinning applicationId $OLD -> $NEW (to match google-services.json)"
-          sed -i "/applicationId/ s/${OLD}/${NEW}/" android/app/build.gradle
+          sed -i "/applicationId/ s/${OLD}/${NEW}/" android/app/build.gradle.kts
           cp ../../firebase/google-services.json android/app/google-services.json
-          sed -i '/id "com.android.application" version/a\        id "com.google.gms.google-services" version "4.4.2" apply false' android/settings.gradle
-          sed -i '/id "dev.flutter.flutter-gradle-plugin"/a\    id "com.google.gms.google-services"' android/app/build.gradle
-          echo "=== settings.gradle plugins ==="; sed -n '/^plugins/,/}/p' android/settings.gradle
-          echo "=== app build.gradle plugins ==="; sed -n '/^plugins/,/}/p' android/app/build.gradle
-          echo "=== applicationId ==="; grep applicationId android/app/build.gradle
+          sed -i '/id("com.android.application") version/a\    id("com.google.gms.google-services") version "4.4.2" apply false' android/settings.gradle.kts
+          sed -i '/id("dev.flutter.flutter-gradle-plugin")/a\    id("com.google.gms.google-services")' android/app/build.gradle.kts
+          echo "=== settings.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/settings.gradle.kts
+          echo "=== app build.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/app/build.gradle.kts
+          echo "=== applicationId ==="; grep applicationId android/app/build.gradle.kts
       - name: Generate launcher icons (brand logo)
         working-directory: apps/${{ matrix.app }}
         run: |
