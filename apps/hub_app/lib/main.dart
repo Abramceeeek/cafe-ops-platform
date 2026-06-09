@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_constants/shared_constants.dart';
 import 'core/router.dart';
 import 'core/push.dart';
+import 'core/theme_mode_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +45,7 @@ class HubApp extends ConsumerWidget {
       title: AppConstants.appName,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
+      themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
     );
   }

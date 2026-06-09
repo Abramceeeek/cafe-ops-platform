@@ -7,6 +7,7 @@ import '../features/dashboard/dashboard_screen.dart';
 import '../features/inbox/inbox_screen.dart';
 import '../features/schedule/schedule_screen.dart';
 import '../features/route/route_screen.dart';
+import '../features/account/account_screen.dart';
 import 'supabase_provider.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -62,6 +63,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/route',
         builder: (context, state) => const CourierRouteScreen(),
+      ),
+      GoRoute(
+        path: '/account',
+        builder: (context, state) => const AccountScreen(),
       ),
     ],
   );

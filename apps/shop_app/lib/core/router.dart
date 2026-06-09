@@ -7,6 +7,7 @@ import '../features/dashboard/dashboard_screen.dart';
 import '../features/request/request_screen.dart';
 import '../features/orders/orders_screen.dart';
 import '../features/templates/templates_screen.dart';
+import '../features/account/account_screen.dart';
 import 'supabase_provider.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -57,6 +58,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/templates',
         builder: (context, state) => const TemplatesScreen(),
+      ),
+      GoRoute(
+        path: '/account',
+        builder: (context, state) => const AccountScreen(),
       ),
     ],
   );

@@ -40,3 +40,16 @@ enum OrderStatus {
     return null;
   }
 }
+
+/// Display names for role values — identical to the web (`lib/roles.ts`).
+/// Specialists are Baker (bread + pastry/retail) and Pitmaster (meat).
+const _roleLabels = {
+  'admin': 'Admin',
+  'foh_manager': 'FOH Manager',
+  'kitchen_manager': 'Kitchen Manager',
+  'bread_baker': 'Baker',
+  'meat_specialist': 'Pitmaster',
+  'courier': 'Courier',
+};
+
+String roleLabel(String? role) => (role == null ? null : _roleLabels[role]) ?? role ?? '—';

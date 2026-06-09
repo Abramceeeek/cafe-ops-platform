@@ -49,6 +49,12 @@ class DashboardScreen extends ConsumerWidget {
                 onPressed: () => context.go('/schedule'),
               ),
             ],
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              icon: const Icon(Icons.person_outline),
+              label: const Text('Account'),
+              onPressed: () => context.go('/account'),
+            ),
           ],
         ),
       ),

@@ -106,7 +106,7 @@ class _TemplatesScreenState extends ConsumerState<TemplatesScreen> {
       firstDate: today,
       lastDate: today.add(const Duration(days: 30)),
     );
-    if (picked == null) return;
+    if (picked == null || !mounted) return;
 
     final earliest = _earliest(t.maxLead);
     final d = DateTime.utc(picked.year, picked.month, picked.day);
