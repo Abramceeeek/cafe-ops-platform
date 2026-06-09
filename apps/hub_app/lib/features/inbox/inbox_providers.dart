@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/auth_provider.dart';
+import '../../core/realtime.dart';
 
 class PendingItem {
   final String id;
@@ -29,6 +30,7 @@ class PendingOrder {
 /// one-category-per-order, so the first line's assigned_role identifies it).
 final pendingOrdersProvider = FutureProvider<List<PendingOrder>>((ref) async {
   final supabase = ref.watch(supabaseProvider);
+  ref.watch(ordersTickProvider); // live re-fetch on any orders change (this app or web)
   final role = ref.watch(currentUserRoleProvider).value?.value;
   final rows = await supabase
       .from('orders')

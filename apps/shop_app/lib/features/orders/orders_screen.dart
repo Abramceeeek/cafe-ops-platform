@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_provider.dart';
+import '../../core/realtime.dart';
 
 class OrderItemView {
   final String name;
@@ -59,6 +60,7 @@ Color _statusColor(String s) {
 /// The shop's own orders (RLS scopes to the shop + the manager's own role).
 final shopOrdersProvider = FutureProvider<List<ShopOrder>>((ref) async {
   final supabase = ref.watch(supabaseProvider);
+  ref.watch(ordersTickProvider); // live re-fetch on any orders change (this app or web)
   final rows = await supabase
       .from('orders')
       .select('id, status, requested_delivery_date, is_emergency, rejection_reason, '

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_provider.dart';
+import '../../core/realtime.dart';
 
 class RouteItem {
   final String name;
@@ -29,6 +30,7 @@ class RouteOrder {
 /// Orders on the courier's route — anything ready or already out for delivery.
 final routeOrdersProvider = FutureProvider<List<RouteOrder>>((ref) async {
   final supabase = ref.watch(supabaseProvider);
+  ref.watch(ordersTickProvider); // live re-fetch on any orders change (this app or web)
   final rows = await supabase
       .from('orders')
       .select(

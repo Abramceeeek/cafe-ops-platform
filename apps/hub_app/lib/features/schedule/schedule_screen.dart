@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/auth_provider.dart';
+import '../../core/realtime.dart';
 import '../inbox/inbox_providers.dart';
 
 /// Approved orders for this specialist's category, waiting to be marked ready.
 final approvedOrdersProvider = FutureProvider<List<PendingOrder>>((ref) async {
   final supabase = ref.watch(supabaseProvider);
+  ref.watch(ordersTickProvider); // live re-fetch on any orders change (this app or web)
   final role = ref.watch(currentUserRoleProvider).value?.value;
   final rows = await supabase
       .from('orders')
