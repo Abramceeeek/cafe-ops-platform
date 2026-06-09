@@ -506,6 +506,37 @@ export async function updateOrderStatus(payload: {
   return { ok: true, from, to: payload.new_status };
 }
 
+// Generate receipts for delivered orders that don't have one yet. The mobile
+// courier "deliver" path records the status via RPC but can't render a PDF, so
+// admin runs this (from Finance) to fill the gap. Admin-only; service-role.
+export async function backfillReceipts() {
+  const cookieStore = await cookies();
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const userClient = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() { return cookieStore.getAll(); },
+      setAll(cookiesToSet: any[]) {
+        try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); } catch { }
+      },
+    },
+  });
+  const { data: { user } } = await userClient.auth.getUser();
+  if (!user) return { error: "unauthorized" };
+  const { data: profile } = await userClient.from("profiles").select("role, is_active").eq("id", user.id).single();
+  if (!profile || !profile.is_active || profile.role !== "admin") return { error: "forbidden" };
+
+  const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } });
+  const { data: orders } = await admin.from("orders").select("id").eq("status", "delivered").is("receipt_id", null);
+  let count = 0;
+  for (const o of orders ?? []) {
+    await generateReceipt(admin, o.id);
+    count++;
+  }
+  return { ok: true, count };
+}
+
 // Server-side PDF receipt — built with the service-role client on the `delivered`
 // transition. Writes the PDF to the private `receipts` bucket, inserts the
 // receipts row and links orders.receipt_id. Idempotent (skips if already linked).

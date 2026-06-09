@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, FileBarChart } from "lucide-react";
+import { RefreshCw, FileBarChart, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { backfillReceipts } from "@/app/actions/orders";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -49,6 +50,15 @@ export default function FinancePage() {
     toast.success(`Generated ${st.length} statement(s) for last month`);
   }
 
+  async function backfill() {
+    setBusy(true);
+    const res = await backfillReceipts();
+    setBusy(false);
+    if (res.error) return toast.error(res.error);
+    toast.success(res.count ? `Generated ${res.count} receipt(s)` : "No missing receipts");
+    await load();
+  }
+
   const load = useCallback(async () => {
     const { data } = await createClient()
       .from("orders")
@@ -80,6 +90,9 @@ export default function FinancePage() {
           <p className="text-sm text-muted-foreground">Delivered orders (internal transfer records).</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void backfill()}>
+            <FileText className="h-4 w-4" /> {busy ? "Working…" : "Generate missing receipts"}
+          </Button>
           <Button variant="outline" size="sm" disabled={busy} onClick={() => void genMonthly()}>
             <FileBarChart className="h-4 w-4" /> {busy ? "Generating…" : "Last month statements"}
           </Button>
