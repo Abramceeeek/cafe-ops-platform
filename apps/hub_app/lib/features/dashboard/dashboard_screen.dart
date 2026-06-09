@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/supabase_provider.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -19,8 +20,19 @@ class DashboardScreen extends ConsumerWidget {
           )
         ],
       ),
-      body: const Center(
-        child: Text('Welcome to the Hub App!\n\nYou have successfully logged in as a Hub Specialist/Courier.'),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Welcome to the Hub App!'),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              icon: const Icon(Icons.inbox),
+              label: const Text('Inbox'),
+              onPressed: () => context.go('/inbox'),
+            ),
+          ],
+        ),
       ),
     );
   }

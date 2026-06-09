@@ -4,6 +4,7 @@ import 'package:shared_constants/shared_constants.dart';
 import 'auth_provider.dart';
 import '../features/auth/login_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/inbox/inbox_screen.dart';
 import 'supabase_provider.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -47,6 +48,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/inbox',
+        builder: (context, state) => const InboxScreen(),
       ),
     ],
   );
