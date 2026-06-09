@@ -1,0 +1,48 @@
+name: build-apk
+
+# Builds installable debug APKs for the two Flutter apps in CI (the runners have
+# Flutter + the Android SDK — no local toolchain needed). Download the APK from
+# the run's Artifacts and sideload it on a phone. Supabase creds are passed at
+# build time via --dart-define from repo secrets SUPABASE_URL / SUPABASE_ANON_KEY
+# (add them under Settings → Secrets → Actions; the anon key is public-safe).
+# Firebase/push is not wired yet — a debug APK installs without it.
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/flutter-env]
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: apk
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [shop_app, hub_app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate android platform files
+        working-directory: apps/${{ matrix.app }}
+        run: flutter create --platforms=android --org com.hubsync .
+      - name: Build debug APK
+        working-directory: apps/${{ matrix.app }}
+        run: >-
+          flutter build apk --debug
+          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-debug-apk
+          path: apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
