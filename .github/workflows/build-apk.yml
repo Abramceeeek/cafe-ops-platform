@@ -49,6 +49,23 @@ jobs:
           echo "=== settings.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/settings.gradle.kts
           echo "=== app build.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/app/build.gradle.kts
           echo "=== applicationId ==="; grep applicationId android/app/build.gradle.kts
+      - name: Force plugin compileSdk (printing/pdf need >= 34)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          cat >> android/build.gradle.kts <<'EOF'
+
+          // Some plugins (e.g. printing) hardcode an older compileSdk than their
+          // androidx deps require (34+). Force every plugin module to 35.
+          subprojects {
+              afterEvaluate {
+                  project.extensions.findByName("android")?.let { ext ->
+                      try {
+                          ext.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(ext, 35)
+                      } catch (e: Exception) {}
+                  }
+              }
+          }
+          EOF
       - name: Generate launcher icons (brand logo)
         working-directory: apps/${{ matrix.app }}
         run: |
