@@ -62,6 +62,20 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     }
   }
 
+  // Deadline to mark ready = 23:59 the day before delivery.
+  // 'overdue' once that has passed (delivery is today or earlier); 'tonight' when
+  // delivery is tomorrow (so it's due by 23:59 tonight).
+  String _deadline(String dateStr) {
+    final d = DateTime.tryParse(dateStr);
+    if (d == null) return 'ok';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dd = DateTime(d.year, d.month, d.day);
+    if (!dd.isAfter(today)) return 'overdue';
+    if (dd.difference(today).inDays == 1) return 'tonight';
+    return 'ok';
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(approvedOrdersProvider);
@@ -83,12 +97,37 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
               itemBuilder: (_, i) {
                 final o = list[i];
                 final busy = _busyId == o.id;
+                final dl = _deadline(o.deliveryDate);
+                final overdue = dl == 'overdue';
+                final tonight = dl == 'tonight';
                 return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                  clipBehavior: Clip.antiAlias,
+                  shape: overdue
+                      ? RoundedRectangleBorder(
+                          side: const BorderSide(color: Colors.red, width: 1.5),
+                          borderRadius: BorderRadius.circular(12),
+                        )
+                      : null,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (overdue || tonight)
+                        Container(
+                          width: double.infinity,
+                          color: overdue ? Colors.red : Colors.orange.shade800,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: Text(
+                            overdue
+                                ? 'OVERDUE · should already be ready for delivery — mark it now.'
+                                : 'Due tonight · mark ready by 23:59 (delivery is tomorrow).',
+                            style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -115,6 +154,8 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                         ),
                       ],
                     ),
+                  ),
+                    ],
                   ),
                 );
               },
