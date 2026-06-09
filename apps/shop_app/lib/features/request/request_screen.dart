@@ -46,11 +46,13 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // Allow today + tomorrow (flagged as emergency below) — not blocked outright.
     final picked = await showDatePicker(
       context: context,
-      initialDate: now.add(const Duration(days: 1)),
-      firstDate: now.add(const Duration(days: 1)),
-      lastDate: now.add(const Duration(days: 30)),
+      initialDate: today,
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 30)),
     );
     if (picked != null) setState(() => _date = picked);
   }
