@@ -144,13 +144,13 @@ export default function CatalogPage() {
   }
 
   async function toggle86(p: Product) {
-    if (p.is_available && !confirm(`Are you sure you want to 86 ${p.name}? It will be unavailable to order.`)) return;
+    if (p.is_available && !confirm(`Are you sure you want to mark ${p.name} as out of stock? It will be unavailable to order.`)) return;
     const { error } = await createClient()
       .from("products")
       .update({ is_available: !p.is_available })
       .eq("id", p.id);
     if (error) return toast.error(error.message);
-    toast.success(p.is_available ? `${p.name} marked 86` : `${p.name} restored`);
+    toast.success(p.is_available ? `${p.name} marked out of stock` : `${p.name} restored`);
     await load();
   }
 
@@ -331,12 +331,12 @@ export default function CatalogPage() {
                         {p.is_available ? (
                           <Badge variant="secondary">Available</Badge>
                         ) : (
-                          <Badge variant="destructive">86&apos;d</Badge>
+                          <Badge variant="destructive">Out of Stock</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button variant="outline" size="sm" onClick={() => void toggle86(p)} className="mr-2">
-                          {p.is_available ? "86 it" : "Restore"}
+                          {p.is_available ? "Mark Out of Stock" : "Restore"}
                         </Button>
                         <Button variant="destructive" size="sm" onClick={() => void deleteProduct(p)}>
                           Delete
