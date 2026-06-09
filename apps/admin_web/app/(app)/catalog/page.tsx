@@ -62,6 +62,7 @@ export default function CatalogPage() {
   const [productOpen, setProductOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
+  const [nameEdits, setNameEdits] = useState<Record<string, string>>({});
 
   // forms
   const [catName, setCatName] = useState("");
@@ -140,6 +141,20 @@ export default function CatalogPage() {
     if (error) return toast.error(error.message);
     toast.success(`${p.name} price updated`);
     setPriceEdits((m) => { const n = { ...m }; delete n[p.id]; return n; });
+    await load();
+  }
+
+  async function saveName(p: Product) {
+    const raw = nameEdits[p.id];
+    if (raw == null) return;
+    const val = raw.trim();
+    const clear = () => setNameEdits((m) => { const n = { ...m }; delete n[p.id]; return n; });
+    if (val === "") return toast.error("Name can't be empty");
+    if (val === p.name) return clear();
+    const { error } = await createClient().from("products").update({ name: val }).eq("id", p.id);
+    if (error) return toast.error(error.message);
+    toast.success(`Renamed to “${val}”`);
+    clear();
     await load();
   }
 
@@ -311,7 +326,15 @@ export default function CatalogPage() {
                 <TableBody>
                   {prods.map((p) => (
                     <TableRow key={p.id}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <Input
+                          className="h-8 w-44"
+                          value={nameEdits[p.id] ?? p.name}
+                          onChange={(e) => setNameEdits((m) => ({ ...m, [p.id]: e.target.value }))}
+                          onBlur={() => { if (nameEdits[p.id] != null) void saveName(p); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                        />
+                      </TableCell>
                       <TableCell>{p.unit}</TableCell>
                       <TableCell className="tabular-nums">{p.lead_time_hours}</TableCell>
                       <TableCell>
