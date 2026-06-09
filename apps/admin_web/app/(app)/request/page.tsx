@@ -147,13 +147,14 @@ export default function NewRequestPage() {
     [cart],
   );
   const minDate = earliestDate(serverNow, maxLead);
-  // Date picker floor = tomorrow, so an earlier-than-normal date is *selectable*
-  // and flagged as an emergency rather than blocked outright.
-  const floorDate = useMemo(() => {
-    const d = new Date(Date.UTC(serverNow.getUTCFullYear(), serverNow.getUTCMonth(), serverNow.getUTCDate()));
-    d.setUTCDate(d.getUTCDate() + 1);
-    return d.toISOString().slice(0, 10);
-  }, [serverNow]);
+  // Date picker floor = today, so today + tomorrow are *selectable* (and flagged
+  // as an emergency below) rather than blocked outright.
+  const floorDate = useMemo(
+    () => new Date(Date.UTC(serverNow.getUTCFullYear(), serverNow.getUTCMonth(), serverNow.getUTCDate()))
+      .toISOString()
+      .slice(0, 10),
+    [serverNow],
+  );
   const isEmergency = !!deliveryDate && deliveryDate < minDate;
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   // One idempotency key per submission intent — reused across retries so a flaky
