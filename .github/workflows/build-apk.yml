@@ -9,7 +9,7 @@ name: build-apk
 on:
   workflow_dispatch:
   push:
-    branches: [feat/flutter-env]
+    branches: [main]
 
 permissions:
   contents: read
