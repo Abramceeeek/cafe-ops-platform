@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "93566864615",
+    "project_id": "cafe-ops-platform",
+    "storage_bucket": "cafe-ops-platform.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:93566864615:android:12e27174824214539a6642",
+        "android_client_info": {
+          "package_name": "com.hubsync.hub"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBItwSAks4NZvEC1KkuFyrb0LrasCAOJ54"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:93566864615:android:ae00470558187de09a6642",
+        "android_client_info": {
+          "package_name": "com.hubsync.shop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBItwSAks4NZvEC1KkuFyrb0LrasCAOJ54"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

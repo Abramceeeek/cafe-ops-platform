@@ -1,8 +1,10 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_constants/shared_constants.dart';
 import 'core/router.dart';
+import 'core/push.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +18,17 @@ void main() async {
     // ignore: deprecated_member_use
     anonKey: supabaseAnonKey,
   );
+
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    // Firebase is optional; don't block startup if it isn't configured.
+  }
+  final sb = Supabase.instance.client;
+  if (sb.auth.currentUser != null) registerPushToken(sb);
+  sb.auth.onAuthStateChange.listen((d) {
+    if (d.event == AuthChangeEvent.signedIn) registerPushToken(sb);
+  });
 
   runApp(const ProviderScope(child: HubApp()));
 }
