@@ -96,7 +96,19 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
       final cart = ref.read(cartProvider);
       final res = await ref.read(supabaseProvider).rpc('submit_request', params: {
         'p_requested_delivery_date': _fmt(_date!),
-        'p_items': cart.map((l) => {'product_id': l.product.id, 'quantity': l.qty}).toList(),
+        'p_items': cart.map((l) => {
+              'product_id': l.product.id,
+              'quantity': l.qty,
+              if (l.note != null && l.note!.isNotEmpty) 'custom_note': l.note,
+              if (l.modList.isNotEmpty)
+                'modifiers': l.modList
+                    .map((m) => {
+                          'modifier_option_id': m.optionId,
+                          'modifier_group_name': m.groupName,
+                          'modifier_option_name': m.optionName,
+                        })
+                    .toList(),
+            }).toList(),
         'p_is_emergency': emergency,
         'p_idempotency_key': null,
       });
@@ -115,6 +127,25 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
   void _toast(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _openOptions(Product p) async {
+    CartLine? existing;
+    for (final l in ref.read(cartProvider)) {
+      if (l.product.id == p.id) existing = l;
+    }
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _OptionsSheet(product: p, existing: existing),
+    );
+    if (result == null) return;
+    ref.read(cartProvider.notifier).setLine(
+          p,
+          result['qty'] as int,
+          (result['mods'] as Map<String, SelectedMod>),
+          result['note'] as String?,
+        );
   }
 
   @override
@@ -138,34 +169,63 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final p = products[i];
-                    final qty = cart
-                        .firstWhere((l) => l.product.id == p.id, orElse: () => CartLine(p, 0))
-                        .qty;
+                    CartLine? line;
+                    for (final l in cart) {
+                      if (l.product.id == p.id) line = l;
+                    }
+                    final qty = line?.qty ?? 0;
+                    final hasMods = p.modifierGroups.isNotEmpty;
+                    final modSummary = line?.modList.map((m) => m.optionName).join(' · ') ?? '';
                     return ListTile(
                       title: Text(p.name),
                       subtitle: Text(
                         '${p.categoryName} · per ${p.unit}'
-                        '${p.price != null ? ' · £${p.price!.toStringAsFixed(2)}' : ''}',
+                        '${p.price != null ? ' · £${p.price!.toStringAsFixed(2)}' : ''}'
+                        '${modSummary.isNotEmpty ? '\n$modSummary' : ''}'
+                        '${(line?.note?.isNotEmpty ?? false) ? '\n“${line!.note}”' : ''}',
                       ),
-                      trailing: qty == 0
-                          ? IconButton(
-                              icon: const Icon(Icons.add_circle_outline),
-                              onPressed: () => ref.read(cartProvider.notifier).add(p),
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.remove_circle_outline),
-                                  onPressed: () => ref.read(cartProvider.notifier).setQty(p.id, qty - 1),
-                                ),
-                                Text('$qty'),
-                                IconButton(
+                      isThreeLine: modSummary.isNotEmpty || (line?.note?.isNotEmpty ?? false),
+                      trailing: hasMods
+                          ? (qty == 0
+                              ? IconButton(
+                                  icon: const Icon(Icons.tune),
+                                  tooltip: 'Choose options',
+                                  onPressed: () => _openOptions(p),
+                                )
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.tune),
+                                      tooltip: 'Edit options',
+                                      onPressed: () => _openOptions(p),
+                                    ),
+                                    Text('$qty'),
+                                    IconButton(
+                                      icon: const Icon(Icons.remove_circle_outline),
+                                      onPressed: () => ref.read(cartProvider.notifier).setQty(p.id, 0),
+                                    ),
+                                  ],
+                                ))
+                          : (qty == 0
+                              ? IconButton(
                                   icon: const Icon(Icons.add_circle_outline),
-                                  onPressed: () => ref.read(cartProvider.notifier).setQty(p.id, qty + 1),
-                                ),
-                              ],
-                            ),
+                                  onPressed: () => ref.read(cartProvider.notifier).add(p),
+                                )
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.remove_circle_outline),
+                                      onPressed: () => ref.read(cartProvider.notifier).setQty(p.id, qty - 1),
+                                    ),
+                                    Text('$qty'),
+                                    IconButton(
+                                      icon: const Icon(Icons.add_circle_outline),
+                                      onPressed: () => ref.read(cartProvider.notifier).setQty(p.id, qty + 1),
+                                    ),
+                                  ],
+                                )),
                     );
                   },
                 );
@@ -219,6 +279,134 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bottom sheet to pick one option per modifier group (required groups must be
+/// chosen), set a quantity, and add a note. Returns {qty, mods, note}.
+class _OptionsSheet extends StatefulWidget {
+  final Product product;
+  final CartLine? existing;
+  const _OptionsSheet({required this.product, this.existing});
+  @override
+  State<_OptionsSheet> createState() => _OptionsSheetState();
+}
+
+class _OptionsSheetState extends State<_OptionsSheet> {
+  late final Map<String, SelectedMod> _selected;
+  late int _qty;
+  late final TextEditingController _note;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Map<String, SelectedMod>.from(widget.existing?.mods ?? {});
+    _qty = widget.existing?.qty ?? 1;
+    _note = TextEditingController(text: widget.existing?.note ?? '');
+  }
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  bool get _requiredMet =>
+      widget.product.modifierGroups.where((g) => g.isRequired).every((g) => _selected.containsKey(g.id));
+
+  void _confirm() {
+    if (!_requiredMet) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Choose the required options first.')));
+      return;
+    }
+    Navigator.pop(context, {'qty': _qty, 'mods': _selected, 'note': _note.text.trim()});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.product;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 8),
+            for (final g in p.modifierGroups) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 8, bottom: 4),
+                child: Text(
+                  g.isRequired ? '${g.name} *' : g.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: g.options.map((o) {
+                  final sel = _selected[g.id]?.optionId == o.id;
+                  return ChoiceChip(
+                    label: Text(o.name),
+                    selected: sel,
+                    onSelected: (v) => setState(() {
+                      if (v) {
+                        _selected[g.id] = SelectedMod(o.id, g.name, o.name);
+                      } else {
+                        _selected.remove(g.id);
+                      }
+                    }),
+                  );
+                }).toList(),
+              ),
+            ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: _note,
+              decoration: const InputDecoration(labelText: 'Note (optional)', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text('Quantity'),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  onPressed: _qty > 1 ? () => setState(() => _qty -= 1) : null,
+                ),
+                Text('$_qty', style: const TextStyle(fontSize: 16)),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: () => setState(() => _qty += 1),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (widget.existing != null)
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, {'qty': 0, 'mods': <String, SelectedMod>{}, 'note': null}),
+                      child: const Text('Remove'),
+                    ),
+                  ),
+                if (widget.existing != null) const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(onPressed: _confirm, child: const Text('Done')),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
