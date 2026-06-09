@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { id, status, item_edits, removed_item_ids } = await req.json();
+    const { id, status, item_edits, removed_item_ids, rejection_reason } = await req.json();
     if (!id || !status) {
       return new Response(JSON.stringify({ error: "id and status are required" }), { status: 400, headers: corsHeaders });
     }
@@ -98,6 +98,7 @@ Deno.serve(async (req) => {
     const updatePayload: Record<string, any> = { status };
     const tsCol = STATUS_TIMESTAMP[status];
     if (tsCol) updatePayload[tsCol] = new Date().toISOString();
+    if (status === "rejected") updatePayload.rejection_reason = (rejection_reason ?? "").trim() || null;
 
     // Line edits: specialist drops lines / changes qty as they approve; courier
     // changes qty at handoff (in_transit). Pricing is admin-owned (set below).

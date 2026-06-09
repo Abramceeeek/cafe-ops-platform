@@ -97,15 +97,17 @@ export function MobileShell({
         "postgres_changes",
         { event: "*", schema: "public", table: "orders" },
         (payload) => {
-          const row = payload.new as { status?: string; was_edited?: boolean } | null;
+          const row = payload.new as { status?: string; was_edited?: boolean; rejection_reason?: string } | null;
           const status = row?.status;
           if (!status) return;
           if (relevant.length > 0 && !relevant.includes(status)) return;
-          // Distinguish an edited approval so the shop knows to review changes.
+          // Distinguish an edited approval, and include the reason on a decline.
           const msg =
             status === "specialist_approved" && row?.was_edited
               ? "Order edited & approved — review changes"
-              : MSG[status] ?? `Order update: ${status}`;
+              : status === "rejected" && row?.rejection_reason
+                ? `Order declined — ${row.rejection_reason}`
+                : MSG[status] ?? `Order update: ${status}`;
           toast(msg);
         },
       )
