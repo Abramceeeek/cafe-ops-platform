@@ -92,23 +92,17 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
     setState(() => _submitting = true);
     try {
       final cart = ref.read(cartProvider);
-      final res = await ref.read(supabaseProvider).functions.invoke(
-        'submit-request',
-        body: {
-          'requested_delivery_date': _fmt(_date!),
-          'emergency': emergency,
-          'items': cart.map((l) => {'product_id': l.product.id, 'quantity': l.qty}).toList(),
-        },
-      );
-      final data = res.data as Map<String, dynamic>?;
-      if (data != null && data['ok'] == true) {
-        final n = (data['order_ids'] as List?)?.length ?? 0;
-        ref.read(cartProvider.notifier).clear();
-        setState(() => _date = null);
-        _toast(emergency ? 'Emergency order submitted — $n order(s).' : 'Request submitted — $n order(s).');
-      } else {
-        _toast('Submit failed: ${data?['error'] ?? 'unknown'}');
-      }
+      final res = await ref.read(supabaseProvider).rpc('submit_request', params: {
+        'p_requested_delivery_date': _fmt(_date!),
+        'p_items': cart.map((l) => {'product_id': l.product.id, 'quantity': l.qty}).toList(),
+        'p_is_emergency': emergency,
+        'p_idempotency_key': null,
+      });
+      final data = res as Map<String, dynamic>?;
+      final n = (data?['order_ids'] as List?)?.length ?? 0;
+      ref.read(cartProvider.notifier).clear();
+      setState(() => _date = null);
+      _toast(emergency ? 'Emergency order submitted — $n order(s).' : 'Request submitted — $n order(s).');
     } catch (e) {
       _toast('Submit failed: $e');
     } finally {
