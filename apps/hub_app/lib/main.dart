@@ -7,11 +7,14 @@ import 'core/router.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // TODO: Load from environment variables (.env)
+  // Provide at build/run time (keeps secrets out of the repo):
+  //   flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
+  const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
   await Supabase.initialize(
-    url: 'YOUR_SUPABASE_URL',
+    url: supabaseUrl,
     // ignore: deprecated_member_use
-    anonKey: 'YOUR_SUPABASE_ANON_KEY',
+    anonKey: supabaseAnonKey,
   );
 
   runApp(const ProviderScope(child: HubApp()));
