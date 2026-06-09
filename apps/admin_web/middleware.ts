@@ -62,6 +62,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Exclude /api/* — those routes authenticate themselves (e.g. the FCM notify
+    // endpoints use a shared secret); the session guard would otherwise 307 the
+    // Supabase webhook to /login and the push would never send.
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
