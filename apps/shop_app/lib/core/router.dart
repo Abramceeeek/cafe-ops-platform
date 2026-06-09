@@ -5,6 +5,7 @@ import 'auth_provider.dart';
 import '../features/auth/login_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/request/request_screen.dart';
+import '../features/orders/orders_screen.dart';
 import 'supabase_provider.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -47,6 +48,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/request',
         builder: (context, state) => const RequestScreen(),
+      ),
+      GoRoute(
+        path: '/orders',
+        builder: (context, state) => const OrdersScreen(),
       ),
     ],
   );
