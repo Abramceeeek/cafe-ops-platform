@@ -37,6 +37,12 @@ class DashboardScreen extends ConsumerWidget {
               label: const Text('Orders'),
               onPressed: () => context.go('/orders'),
             ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              icon: const Icon(Icons.list_alt),
+              label: const Text('Templates'),
+              onPressed: () => context.go('/templates'),
+            ),
           ],
         ),
       ),
