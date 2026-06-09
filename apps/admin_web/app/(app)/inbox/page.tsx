@@ -10,9 +10,8 @@ interface Item {
   id: string;
   quantity: number;
   unit: string;
-  unit_cost: number | null;
   custom_note: string | null;
-  products: { name: string; product_categories: { name: string; assigned_role: string } | null } | null;
+  products: { name: string; price: number | null; product_categories: { name: string; assigned_role: string } | null } | null;
   order_item_modifiers: { modifier_group_name: string; modifier_option_name: string }[];
 }
 interface InboxRow {
@@ -41,7 +40,6 @@ export default function InboxPage() {
   const [role, setRole] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [costs, setCosts] = useState<Record<string, string>>({});
   const [qtys, setQtys] = useState<Record<string, string>>({});
   const [removed, setRemoved] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -62,8 +60,8 @@ export default function InboxPage() {
         `id, requested_delivery_date, submitted_at,
          shops ( name ),
          order_items (
-           id, quantity, unit, unit_cost, custom_note,
-           products ( name, product_categories ( name, assigned_role ) ),
+           id, quantity, unit, custom_note,
+           products ( name, price, product_categories ( name, assigned_role ) ),
            order_item_modifiers ( modifier_group_name, modifier_option_name )
          )`,
       )
@@ -83,15 +81,12 @@ export default function InboxPage() {
 
   function openQuote(r: InboxRow) {
     if (openId === r.id) return setOpenId(null);
-    const c: Record<string, string> = {};
     const q: Record<string, string> = {};
     const rm: Record<string, boolean> = {};
     for (const i of mine(r)) {
-      c[i.id] = (i.unit_cost ?? 0).toFixed(2);
       q[i.id] = String(i.quantity);
       rm[i.id] = false;
     }
-    setCosts(c);
     setQtys(q);
     setRemoved(rm);
     setOpenId(r.id);
@@ -108,7 +103,6 @@ export default function InboxPage() {
     const item_edits = kept.map((i) => ({
       id: i.id,
       quantity: parseFloat(qtys[i.id] || String(i.quantity)) || Number(i.quantity),
-      unit_cost: parseFloat(costs[i.id] || "0") || 0,
     }));
     const removed_item_ids = items.filter((i) => removed[i.id]).map((i) => i.id);
     const res = await updateOrderStatus({
@@ -121,7 +115,7 @@ export default function InboxPage() {
     if (res.error) return toast.error(res.error + (res.details ? ": " + res.details : ""));
     toast.success(removed_item_ids.length || item_edits.some((e, idx) => e.quantity !== Number(kept[idx].quantity))
       ? "Edited & approved"
-      : "Approved & priced");
+      : "Approved");
     setOpenId(null);
     await load();
   }
@@ -136,17 +130,18 @@ export default function InboxPage() {
     await load();
   }
 
+  // Read-only total from the admin-set product price × quantity.
   const total = (r: InboxRow) =>
     mine(r)
       .filter((i) => !removed[i.id])
-      .reduce((s, i) => s + (parseFloat(costs[i.id] || "0") || 0) * (parseFloat(qtys[i.id] || "0") || 0), 0);
+      .reduce((s, i) => s + (Number(i.products?.price ?? 0)) * (parseFloat(qtys[i.id] || "0") || 0), 0);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between px-0.5 pt-1">
         <div>
           <h1 className="font-display text-2xl">Inbox</h1>
-          <p className="text-sm text-muted-foreground">Pending requests · review, edit &amp; quote</p>
+          <p className="text-sm text-muted-foreground">Pending requests · review, edit &amp; approve</p>
         </div>
         <button onClick={() => void load()} aria-label="Refresh" className="grid h-9 w-9 place-items-center text-muted-foreground">
           <RefreshCw className="h-[18px] w-[18px]" />
@@ -240,15 +235,11 @@ export default function InboxPage() {
                                 <span className="text-[11px] text-muted-foreground">{i.unit}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-1 rounded-md border border-input bg-card px-2 py-1">
-                                  <span className="font-mono text-[13px] font-bold">£</span>
-                                  <input
-                                    inputMode="decimal"
-                                    value={costs[i.id] ?? "0.00"}
-                                    onChange={(e) => setCosts((c) => ({ ...c, [i.id]: e.target.value.replace(/[^0-9.]/g, "") }))}
-                                    className="w-12 bg-transparent text-right font-mono text-[13px] font-bold outline-none"
-                                  />
-                                </div>
+                                <span className="font-mono text-[12px] text-muted-foreground">
+                                  {i.products?.price != null
+                                    ? `£${(Number(i.products.price) * (parseFloat(qtys[i.id] || "0") || 0)).toFixed(2)}`
+                                    : "no price"}
+                                </span>
                                 <button
                                   onClick={() => setRemoved((m) => ({ ...m, [i.id]: true }))}
                                   aria-label="Remove line"
@@ -270,7 +261,7 @@ export default function InboxPage() {
               {open ? (
                 <>
                   <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
-                    <span className="font-display text-base">Quote total</span>
+                    <span className="font-display text-base">Order total</span>
                     <span className="font-mono text-lg font-bold text-primary">£{total(r).toFixed(2)}</span>
                   </div>
                   <div className="mt-3 flex gap-2.5">
@@ -287,7 +278,7 @@ export default function InboxPage() {
                       onClick={() => void approve(r)}
                       className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:opacity-50"
                     >
-                      <Check className="h-4 w-4" /> Approve &amp; Quote
+                      <Check className="h-4 w-4" /> Approve
                     </button>
                   </div>
                 </>
@@ -296,7 +287,7 @@ export default function InboxPage() {
                   onClick={() => openQuote(r)}
                   className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
                 >
-                  Review, edit &amp; quote <ChevronRight className="h-4 w-4" />
+                  Review, edit &amp; approve <ChevronRight className="h-4 w-4" />
                 </button>
               )}
             </div>

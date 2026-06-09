@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createUser, updateUserStatus } from "@/app/actions/users";
+import { roleLabel, USER_ROLES } from "@/lib/roles";
 
 interface Profile {
   id: string;
@@ -42,16 +43,6 @@ interface Shop {
   id: string;
   name: string;
 }
-
-const ROLES = [
-  "admin",
-  "meat_specialist",
-  "bread_baker",
-  "pastry_chef",
-  "foh_manager",
-  "kitchen_manager",
-  "courier",
-];
 
 export default function UsersPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -149,7 +140,7 @@ export default function UsersPage() {
                     <Select value={role} onValueChange={setRole}>
                       <SelectTrigger><SelectValue placeholder="Select a role" /></SelectTrigger>
                       <SelectContent>
-                        {ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                        {USER_ROLES.map(r => <SelectItem key={r} value={r}>{roleLabel(r)}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -192,7 +183,7 @@ export default function UsersPage() {
               {profiles.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">{p.full_name}</TableCell>
-                  <TableCell className="text-muted-foreground">{p.role}</TableCell>
+                  <TableCell className="text-muted-foreground">{roleLabel(p.role)}</TableCell>
                   <TableCell>{shopName(p.shop_id)}</TableCell>
                   <TableCell>
                     {p.is_active ? (

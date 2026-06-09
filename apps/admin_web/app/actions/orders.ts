@@ -4,6 +4,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { earliestDate } from "@/lib/utils";
 
 export interface CartItem {
@@ -353,37 +354,38 @@ export async function updateOrderStatus(payload: {
 
   const patch: Record<string, unknown> = { status: payload.new_status };
 
-  // Line edits: the specialist adjusts qty/cost + drops lines as they approve;
-  // the courier adjusts qty at handoff (delivering more/less). Apply both here,
-  // before flipping the status.
+  // Line edits: the specialist adjusts quantities + drops lines as they approve;
+  // the courier adjusts quantities at handoff (delivering more/less). Apply both
+  // before flipping the status. Pricing is NOT set here — admin owns it (below).
   if (payload.new_status === "specialist_approved" || payload.new_status === "in_transit") {
     for (const id of payload.removed_item_ids ?? []) {
       const { error } = await admin.from("order_items").delete().eq("id", id).eq("order_id", payload.order_id);
       if (error) return { error: "internal_server_error", details: error.message };
     }
     for (const e of payload.item_edits ?? []) {
-      const upd: Record<string, unknown> = {};
-      if (e.quantity != null) upd.quantity = e.quantity;
-      if (e.unit_cost != null) upd.unit_cost = e.unit_cost;
-      if (Object.keys(upd).length > 0) {
-        const { error } = await admin.from("order_items").update(upd).eq("id", e.id).eq("order_id", payload.order_id);
-        if (error) return { error: "internal_server_error", details: error.message };
-      }
+      if (e.quantity == null) continue;
+      const { error } = await admin.from("order_items").update({ quantity: e.quantity }).eq("id", e.id).eq("order_id", payload.order_id);
+      if (error) return { error: "internal_server_error", details: error.message };
     }
   }
 
-  // Specialist approval flags the order as edited so the shop reviews the diff.
+  // On approval, price every surviving line from the admin-set product price
+  // (specialists no longer price), and flag the order edited so the shop reviews.
   if (payload.new_status === "specialist_approved") {
-    // Legacy cost-only payload (kept for back-compat).
-    for (const c of payload.item_costs ?? []) {
-      const { error } = await admin.from("order_items").update({ unit_cost: c.unit_cost }).eq("id", c.id).eq("order_id", payload.order_id);
-      if (error) return { error: "internal_server_error", details: error.message };
-    }
-    // was_edited = any surviving line whose quantity differs from what was requested, or any removal.
     const { data: liveItems } = await admin
       .from("order_items")
-      .select("quantity, requested_quantity")
+      .select("id, product_id, quantity, requested_quantity")
       .eq("order_id", payload.order_id);
+    const ids = Array.from(new Set((liveItems ?? []).map((r) => r.product_id)));
+    const { data: prods } = ids.length
+      ? await admin.from("products").select("id, price").in("id", ids)
+      : { data: [] as { id: string; price: number | null }[] };
+    const priceById = new Map((prods ?? []).map((p) => [p.id, p.price]));
+    for (const it of liveItems ?? []) {
+      const price = priceById.get(it.product_id) ?? null;
+      const { error } = await admin.from("order_items").update({ unit_cost: price }).eq("id", it.id);
+      if (error) return { error: "internal_server_error", details: error.message };
+    }
     const qtyChanged = (liveItems ?? []).some(
       (r) => r.requested_quantity != null && Number(r.quantity) !== Number(r.requested_quantity),
     );
@@ -485,11 +487,130 @@ export async function updateOrderStatus(payload: {
         .eq("shop_id", order.shop_id);
     }
 
-    // Call generate-receipt
-    await userClient.functions.invoke("generate-receipt", {
-      body: { order_id: payload.order_id },
-    });
+    // Generate the receipt here with the service-role client. (The edge function
+    // can't be triggered from the courier's session — courier isn't the shop —
+    // and we have no edge-deploy path, so this keeps it shipping with the web app.)
+    await generateReceipt(admin, payload.order_id);
   }
 
   return { ok: true, from, to: payload.new_status };
+}
+
+// Server-side PDF receipt — built with the service-role client on the `delivered`
+// transition. Writes the PDF to the private `receipts` bucket, inserts the
+// receipts row and links orders.receipt_id. Idempotent (skips if already linked).
+// Mirrors supabase/functions/generate-receipt (kept for the future Flutter path).
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function generateReceipt(admin: any, orderId: string) {
+  const { data: order } = await admin
+    .from("orders")
+    .select(
+      `id, shop_id, requested_delivery_date, delivered_at, status, receipt_id,
+       shops ( name ),
+       courier:profiles!orders_assigned_courier_fkey ( full_name ),
+       order_items ( quantity, unit, unit_cost, products ( name ), order_item_modifiers ( modifier_option_name ) )`,
+    )
+    .eq("id", orderId)
+    .single();
+  if (!order || order.status !== "delivered" || order.receipt_id) return;
+
+  let total = 0;
+  let hasCosts = false;
+  const lines = (order.order_items as any[]).map((i) => {
+    const mods = (i.order_item_modifiers ?? []).map((m: any) => m.modifier_option_name);
+    const desc = `${i.products?.name ?? "Item"}${mods.length ? ` (${mods.join(", ")})` : ""}`;
+    let amount = "—";
+    if (i.unit_cost != null) {
+      const lt = Number(i.unit_cost) * Number(i.quantity);
+      total += lt;
+      hasCosts = true;
+      amount = `£${lt.toFixed(2)}`;
+    }
+    return { desc, qty: `${i.quantity} ${i.unit}`, amount };
+  });
+
+  const receiptId = crypto.randomUUID();
+  const shopName = (order.shops as any)?.name ?? "Shop";
+  const courierName = (order.courier as any)?.full_name ?? "Courier";
+  const deliveredStr = order.delivered_at
+    ? new Date(order.delivered_at).toISOString().replace("T", " ").slice(0, 16)
+    : "—";
+
+  const pdf = await PDFDocument.create();
+  const page = pdf.addPage([595, 842]);
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.11, 0.1, 0.09);
+  const grey = rgb(0.46, 0.45, 0.44);
+  const M = 56;
+  const RIGHT = 595 - M;
+  let y = 792;
+  const at = (t: string, x: number, size: number, f = font, color = ink) =>
+    page.drawText(t, { x, y, size, font: f, color });
+  const right = (t: string, size: number, f = font, color = ink) =>
+    page.drawText(t, { x: RIGHT - f.widthOfTextAtSize(t, size), y, size, font: f, color });
+  const rule = (yy: number, color = rgb(0.85, 0.84, 0.82)) =>
+    page.drawLine({ start: { x: M, y: yy }, end: { x: RIGHT, y: yy }, thickness: 1, color });
+
+  at("bobo & wild", M, 22, bold);
+  right("RECEIPT", 12, bold, grey);
+  y -= 16;
+  at("HubSync · Internal Delivery Receipt", M, 10, font, grey);
+  right(`#${receiptId.slice(-8).toUpperCase()}`, 10, font, grey);
+  y -= 16;
+  rule(y);
+  y -= 26;
+
+  const meta: [string, string][] = [
+    ["Shop", shopName],
+    ["Delivery date", String(order.requested_delivery_date)],
+    ["Delivered", deliveredStr],
+    ["Delivered by", courierName],
+  ];
+  for (const [k, v] of meta) {
+    at(k, M, 10, font, grey);
+    at(v, M + 110, 11, bold);
+    y -= 19;
+  }
+
+  y -= 10;
+  at("ITEMS DELIVERED", M, 11, bold, grey);
+  right("AMOUNT", 11, bold, grey);
+  at("QTY", RIGHT - 150, 11, bold, grey);
+  y -= 8;
+  rule(y);
+  y -= 20;
+  for (const l of lines) {
+    at(l.desc.length > 52 ? l.desc.slice(0, 51) + "…" : l.desc, M, 11);
+    at(l.qty, RIGHT - 150, 11, font, grey);
+    right(l.amount, 11);
+    y -= 20;
+  }
+  y -= 2;
+  rule(y);
+  y -= 24;
+  at("TOTAL", M, 13, bold);
+  right(hasCosts ? `£${total.toFixed(2)}` : "—", 13, bold);
+
+  y = 96;
+  rule(y + 16);
+  at("This is an internal transfer record between bobo & wild sites. Not a VAT invoice.", M, 9, font, grey);
+
+  const bytes = await pdf.save();
+  await admin.storage.createBucket("receipts", { public: false }).catch(() => {});
+  const d = order.delivered_at ? new Date(order.delivered_at) : new Date();
+  const path = `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${order.shop_id}/${receiptId}.pdf`;
+  const { error: upErr } = await admin.storage
+    .from("receipts")
+    .upload(path, bytes, { contentType: "application/pdf", upsert: true });
+  if (upErr) return;
+
+  await admin.from("receipts").insert({
+    id: receiptId,
+    order_id: orderId,
+    shop_id: order.shop_id,
+    pdf_storage_path: path,
+    total_cost: hasCosts ? total : null,
+  });
+  await admin.from("orders").update({ receipt_id: receiptId }).eq("id", orderId);
 }

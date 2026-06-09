@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { submitOrder } from "@/app/actions/orders";
 import { createClient } from "@/lib/supabase/client";
+import { ROLE_LABEL } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,11 +46,6 @@ interface CartLine {
 
 // Hub specialist display name from the category's assigned_role (DB-driven,
 // not a hardcoded regex — add a category in the DB, no deploy needed).
-const ROLE_LABEL: Record<string, string> = {
-  meat_specialist: "Pitmaster",
-  bread_baker: "Baker",
-  pastry_chef: "Pastry Chef",
-};
 function specialistFor(assignedRole: string | null | undefined): string {
   return (assignedRole && ROLE_LABEL[assignedRole]) || "Hub";
 }

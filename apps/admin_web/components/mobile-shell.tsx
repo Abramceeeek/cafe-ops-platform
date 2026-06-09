@@ -13,6 +13,7 @@ import {
   User,
   Inbox,
   CalendarDays,
+  BookOpen,
   Truck,
   type LucideIcon,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const SHOP_TABS: Tab[] = [
 const SPECIALIST_TABS: Tab[] = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/board", label: "Schedule", icon: CalendarDays },
+  { href: "/catalog", label: "Catalog", icon: BookOpen },
   { href: "/account", label: "Account", icon: User },
 ];
 
@@ -47,7 +49,7 @@ const COURIER_TABS: Tab[] = [
   { href: "/account", label: "Account", icon: User },
 ];
 
-const SPECIALIST_ROLES = ["meat_specialist", "bread_baker", "pastry_chef"];
+const SPECIALIST_ROLES = ["meat_specialist", "bread_baker"];
 
 function tabsFor(role: string): Tab[] {
   if (role === "courier") return COURIER_TABS;
@@ -72,9 +74,8 @@ export function MobileShell({
     const RELEVANT: Record<string, string[]> = {
       foh_manager: ["specialist_approved", "in_transit", "delivered", "rejected"],
       kitchen_manager: ["specialist_approved", "in_transit", "delivered", "rejected"],
-      meat_specialist: ["pending_request", "shop_confirmed"],
-      bread_baker: ["pending_request", "shop_confirmed"],
-      pastry_chef: ["pending_request", "shop_confirmed"],
+      meat_specialist: ["pending_request"],
+      bread_baker: ["pending_request"],
       courier: ["specialist_approved", "ready_for_courier"],
       admin: [],
     };

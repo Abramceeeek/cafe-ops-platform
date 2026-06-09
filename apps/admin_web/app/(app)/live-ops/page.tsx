@@ -16,10 +16,11 @@ interface Row {
 }
 
 const COLS: { label: string; statuses: string[] }[] = [
-  { label: "Pending", statuses: ["pending_request", "specialist_approved"] },
-  { label: "Confirmed", statuses: ["shop_confirmed"] },
-  { label: "In Production", statuses: ["in_progress", "packaged"] },
-  { label: "Ready / Transit", statuses: ["ready_for_courier", "in_transit"] },
+  { label: "Pending", statuses: ["pending_request"] },
+  // Approved folds in legacy production stages so old rows still show.
+  { label: "Approved", statuses: ["specialist_approved", "shop_confirmed", "in_progress", "packaged"] },
+  { label: "Ready", statuses: ["ready_for_courier"] },
+  { label: "In Transit", statuses: ["in_transit"] },
   { label: "Delivered", statuses: ["delivered"] },
 ];
 

@@ -161,9 +161,6 @@ export default function FinancePage() {
           )}
         </CardContent>
       </Card>
-      <p className="text-xs text-muted-foreground">
-        PDF receipts &amp; monthly statements are generated in the next step (4.1/4.2).
-      </p>
     </div>
   );
 }
