@@ -49,6 +49,30 @@ jobs:
           echo "=== settings.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/settings.gradle.kts
           echo "=== app build.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/app/build.gradle.kts
           echo "=== applicationId ==="; grep applicationId android/app/build.gradle.kts
+      - name: Force compileSdk 36 (newer androidx deps require it)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          # The app module itself.
+          sed -i 's/compileSdk = .*/compileSdk = 36/' android/app/build.gradle.kts
+          grep -n "compileSdk" android/app/build.gradle.kts
+          # Plugin library modules (printing, url_launcher, …) hardcode an older
+          # compileSdk than their androidx deps require (browser 1.9.0 needs 36).
+          # Force every not-yet-evaluated plugin module to 36; skip already-evaluated
+          # projects (e.g. :app, pre-evaluated by Flutter) to avoid afterEvaluate errors.
+          cat >> android/build.gradle.kts <<'EOF'
+
+          subprojects {
+              if (!state.executed) {
+                  afterEvaluate {
+                      project.extensions.findByName("android")?.let { ext ->
+                          try {
+                              ext.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(ext, 36)
+                          } catch (e: Exception) {}
+                      }
+                  }
+              }
+          }
+          EOF
       - name: Generate launcher icons (brand logo)
         working-directory: apps/${{ matrix.app }}
         run: |
