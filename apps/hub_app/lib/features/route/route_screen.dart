@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/realtime.dart';
+import '../../core/print_sheet.dart';
 
 class RouteItem {
   final String name;
@@ -86,7 +87,28 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Route'),
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: () => ref.invalidate(routeOrdersProvider))],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Print route',
+            onPressed: () {
+              final list = ref.read(routeOrdersProvider).value ?? [];
+              printSheet(
+                heading: 'Delivery Route',
+                subtitle: 'Ready & out-for-delivery',
+                blocks: list
+                    .map((o) => PrintBlock(
+                          title: o.shopName,
+                          meta: '${o.status == 'in_transit' ? 'In transit' : 'Ready'} · for ${o.deliveryDate}',
+                          address: o.address,
+                          lines: o.items.map((it) => PrintLine(it.name, '${it.qty} ${it.unit}')).toList(),
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: () => ref.invalidate(routeOrdersProvider)),
+        ],
       ),
       body: orders.when(
         loading: () => const Center(child: CircularProgressIndicator()),

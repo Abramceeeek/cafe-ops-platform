@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/auth_provider.dart';
 import '../../core/realtime.dart';
+import '../../core/print_sheet.dart';
 import '../inbox/inbox_providers.dart';
 
 /// Approved orders for this specialist's category, waiting to be marked ready.
@@ -84,7 +85,27 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Schedule'),
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: () => ref.invalidate(approvedOrdersProvider))],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Print sheet',
+            onPressed: () {
+              final list = ref.read(approvedOrdersProvider).value ?? [];
+              printSheet(
+                heading: 'Production / Delivery Sheet',
+                subtitle: 'Approved orders waiting to go out',
+                blocks: list
+                    .map((o) => PrintBlock(
+                          title: o.shopName,
+                          meta: 'for ${o.deliveryDate}${o.isEmergency ? ' · EMERGENCY' : ''}',
+                          lines: o.items.map((it) => PrintLine(it.name, '${it.qty} ${it.unit}')).toList(),
+                        ))
+                    .toList(),
+              );
+            },
+          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: () => ref.invalidate(approvedOrdersProvider)),
+        ],
       ),
       body: orders.when(
         loading: () => const Center(child: CircularProgressIndicator()),
