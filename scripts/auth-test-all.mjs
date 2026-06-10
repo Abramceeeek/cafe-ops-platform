@@ -6,7 +6,8 @@ const kv = Object.fromEntries(
     .split(/\r?\n/).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]),
 );
 const anon = createClient(kv.SUPABASE_URL, kv.Superbase_anon_public, { auth: { persistSession: false } });
-const PASS = "Bobo&wild2026";
+const PASS = kv.STAFF_PASSWORD;
+if (!PASS) { console.error("Add STAFF_PASSWORD=<password> to keys.txt"); process.exit(1); }
 const accounts = [
   "foh.clapham@bobo.wild", "boh.clapham@bobo.wild",
   "foh.shoreditch@bobo.wild", "boh.shoreditch@bobo.wild",

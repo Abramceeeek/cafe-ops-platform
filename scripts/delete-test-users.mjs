@@ -8,6 +8,11 @@ const kv = Object.fromEntries(
 const db = createClient(kv.SUPABASE_URL, kv.Superbase_service_role, { auth: { persistSession: false } });
 
 // Explicit named e2e accounts only (per the user's request).
+if (!process.argv.includes("--confirm")) {
+  console.error(`Refusing to run without --confirm — this DELETES the named e2e test users + their data on ${kv.SUPABASE_URL}.`);
+  console.error("Re-run:  node scripts/delete-test-users.mjs --confirm");
+  process.exit(1);
+}
 const E2E_EMAILS = [
   "e2e.admin@boboandwild.dev",
   "e2e.courier@boboandwild.dev",

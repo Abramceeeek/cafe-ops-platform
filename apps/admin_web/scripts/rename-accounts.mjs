@@ -7,7 +7,7 @@
 //   pitmaster@ / baker@ / courier@ / admin@bobo.wild.
 //
 // Password comes ONLY from the environment — never hard-coded (public repo):
-//   PowerShell:  $env:STAFF_PASSWORD='Bobo&wild2026'; node scripts/rename-accounts.mjs --dry-run
+//   PowerShell:  $env:STAFF_PASSWORD='<staff-password>'; node scripts/rename-accounts.mjs --dry-run
 // Needs env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, STAFF_PASSWORD
 //   --dry-run  prints the plan, makes no changes.
 //

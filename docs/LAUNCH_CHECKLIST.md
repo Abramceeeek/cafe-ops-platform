@@ -16,7 +16,7 @@ here costs money except the optional backup line. `[you]` = needs the owner;
 - [x] **Real staff logins created** on `@bobo.wild` (replaced `*.hubsync.test`) via
   `node scripts/rename-accounts.mjs` (idempotent; password from `STAFF_PASSWORD` env).
   18 accounts: `foh.<site>@` + `boh.<site>@` ×7, `pitmaster@`, `baker@`, `courier@`,
-  `admin@bobo.wild`. Shared launch password `Bobo&wild2026` — **rotate after UAT**.
+  `admin@bobo.wild`. Shared launch password set via `STAFF_PASSWORD` — **rotate after UAT**.
   Test accounts `pastry@hubsync.test` / `jane@example.com` deactivated. `[done]`
 - [ ] Shops: keep Shop A–G or load the **real 7 locations** (Shoreditch, Clapham, St. Albans, Chigwell, Stratford, South Woodford, Wanstead). `[decision]`
 - [ ] Catalog: keep sample or load the **real bobo & wild catalog** (kitchen bread / smoked-meat / pastry) with lead times + category→specialist. `[decision, me seeds]`

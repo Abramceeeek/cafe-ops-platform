@@ -3,7 +3,7 @@
 Walk this top-to-bottom on the **live** web app. Every step is **action → expected**.
 Tick each box. If a step fails, note the screen + message and stop that flow.
 
-- **All logins:** password `Bobo&wild2026` (shared launch password — rotate after UAT).
+- **All logins:** the shared launch password (provisioned via `STAFF_PASSWORD` / `keys.txt` — rotate after UAT).
 - **Accounts** (18): `foh.<site>@bobo.wild` + `boh.<site>@bobo.wild` for
   `clapham, shoreditch, chigwell, swoodford, stratford, stalbans, wanstead`;
   `pitmaster@bobo.wild` (Meat), `baker@bobo.wild` (Bread + Pastry/Retail),
@@ -118,7 +118,7 @@ Tick each box. If a step fails, note the screen + message and stop that flow.
 ### Run the automated security harness
 ```powershell
 $env:SUPABASE_URL=...; $env:SUPABASE_ANON_KEY=...; $env:SUPABASE_SERVICE_ROLE_KEY=...
-$env:STAFF_PASSWORD='Bobo&wild2026'
+$env:STAFF_PASSWORD='<staff-password>'
 node apps/admin_web/scripts/uat.mjs   # expect: 7 passed, 0 failed
 ```
 

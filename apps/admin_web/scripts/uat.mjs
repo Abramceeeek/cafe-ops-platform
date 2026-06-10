@@ -6,14 +6,14 @@
 //
 // Run (PowerShell, env sourced from keys.txt):
 //   $env:SUPABASE_URL=...; $env:SUPABASE_ANON_KEY=...; $env:SUPABASE_SERVICE_ROLE_KEY=...
-//   $env:STAFF_PASSWORD='Bobo&wild2026'; node scripts/uat.mjs
+//   $env:STAFF_PASSWORD='<staff-password>'; node scripts/uat.mjs
 import { createClient } from "@supabase/supabase-js";
 
 const URL = process.env.SUPABASE_URL;
 const ANON = process.env.SUPABASE_ANON_KEY;
 const SR = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const PW = process.env.STAFF_PASSWORD || "Bobo&wild2026";
-if (!URL || !ANON || !SR) { console.error("Need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY"); process.exit(1); }
+const PW = process.env.STAFF_PASSWORD;
+if (!URL || !ANON || !SR || !PW) { console.error("Need SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, STAFF_PASSWORD"); process.exit(1); }
 
 const admin = createClient(URL, SR, { auth: { persistSession: false } });
 let pass = 0, fail = 0;

@@ -12,7 +12,8 @@ const admin = createClient(kv.SUPABASE_URL, kv.Superbase_service_role, { auth: {
 const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
 const byEmail = new Map(list.users.map((u) => [u.email, u]));
 
-const PASS = "Bobo&wild2026";
+const PASS = kv.STAFF_PASSWORD;
+if (!PASS) { console.error("Add STAFF_PASSWORD=<password> to keys.txt"); process.exit(1); }
 const accounts = ["admin@bobo.wild", "foh.shoreditch@bobo.wild", "baker@bobo.wild", "courier@bobo.wild"];
 
 for (const email of accounts) {
@@ -22,6 +23,6 @@ for (const email of accounts) {
     const { error } = await anon.auth.signInWithPassword({ email, password: PASS });
     login = error ? "FAIL: " + error.message : "OK ✓";
   }
-  console.log(`${email.padEnd(28)} exists=${exists ? "YES" : "NO "}  login(${PASS})=${login}`);
+  console.log(`${email.padEnd(28)} exists=${exists ? "YES" : "NO "}  login=${login}`);
 }
 console.log(`\nTotal @bobo.wild accounts present: ${[...byEmail.keys()].filter((e) => e?.endsWith("@bobo.wild")).length}`);

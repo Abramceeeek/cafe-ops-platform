@@ -5,6 +5,11 @@ const kv = Object.fromEntries(
   readFileSync(new URL("../keys.txt", import.meta.url), "utf8")
     .split(/\r?\n/).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]),
 );
+if (!process.argv.includes("--confirm")) {
+  console.error(`Refusing to run without --confirm — this DELETES the named test users + their data on ${kv.SUPABASE_URL}.`);
+  console.error("Re-run:  node scripts/purge-users.mjs --confirm");
+  process.exit(1);
+}
 const ref = kv.SUPABASE_URL.replace("https://", "").split(".")[0];
 const password = kv.SUPABASE_DB_PASSWORD;
 const candidates = [
