@@ -67,8 +67,9 @@ class CatalogScreen extends ConsumerWidget {
   Future<void> _toggle86(BuildContext context, WidgetRef ref, CatProduct p) async {
     try {
       await ref.read(supabaseProvider).from('products').update({'is_available': !p.isAvailable}).eq('id', p.id);
+      if (!context.mounted) return;
       ref.invalidate(catalogManageProvider);
-      if (context.mounted) _toast(context, p.isAvailable ? '${p.name} marked out of stock' : '${p.name} restored');
+      _toast(context, p.isAvailable ? '${p.name} marked out of stock' : '${p.name} restored');
     } catch (e) {
       if (context.mounted) _toast(context, 'Failed: $e');
     }
@@ -89,8 +90,9 @@ class CatalogScreen extends ConsumerWidget {
     if (ok != true) return;
     try {
       await ref.read(supabaseProvider).from('products').delete().eq('id', p.id);
+      if (!context.mounted) return;
       ref.invalidate(catalogManageProvider);
-      if (context.mounted) _toast(context, '${p.name} deleted');
+      _toast(context, '${p.name} deleted');
     } catch (e) {
       if (context.mounted) _toast(context, 'Failed: $e');
     }
@@ -109,8 +111,9 @@ class CatalogScreen extends ConsumerWidget {
         'lead_time_hours': values['lead'],
         'price': values['price'],
       }).eq('id', p.id);
+      if (!context.mounted) return;
       ref.invalidate(catalogManageProvider);
-      if (context.mounted) _toast(context, 'Saved');
+      _toast(context, 'Saved');
     } catch (e) {
       if (context.mounted) _toast(context, 'Failed: $e');
     }
@@ -134,8 +137,9 @@ class CatalogScreen extends ConsumerWidget {
         'lead_time_hours': values['lead'],
         'price': values['price'],
       });
+      if (!context.mounted) return;
       ref.invalidate(catalogManageProvider);
-      if (context.mounted) _toast(context, 'Product added');
+      _toast(context, 'Product added');
     } catch (e) {
       if (context.mounted) _toast(context, 'Failed: $e');
     }

@@ -56,7 +56,8 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         'p_order_id': o.id,
         'p_to': 'ready_for_courier',
       });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ready for delivery')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ready for delivery')));
       ref.invalidate(approvedOrdersProvider);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
