@@ -1,10 +1,12 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_constants/shared_constants.dart';
 import 'core/router.dart';
 import 'core/push.dart';
+import 'core/notifications.dart';
 import 'core/theme_mode_provider.dart';
 
 void main() async {
@@ -22,6 +24,7 @@ void main() async {
 
   try {
     await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   } catch (_) {
     // Firebase is optional; don't block startup if it isn't configured.
   }
@@ -34,19 +37,40 @@ void main() async {
   runApp(const ProviderScope(child: ShopApp()));
 }
 
-class ShopApp extends ConsumerWidget {
+class ShopApp extends ConsumerStatefulWidget {
   const ShopApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ShopApp> createState() => _ShopAppState();
+}
+
+class _ShopAppState extends ConsumerState<ShopApp> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => setupNotificationHandlers());
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
       title: AppConstants.appName,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
+      builder: (context, child) {
+        // Bigger type on large wall-mounted displays; phones stay at 1.0.
+        final width = MediaQuery.sizeOf(context).width;
+        final scale = (width / 700).clamp(1.0, 1.3).toDouble();
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        );
+      },
     );
   }
 }
