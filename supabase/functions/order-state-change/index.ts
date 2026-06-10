@@ -140,22 +140,6 @@ Deno.serve(async (req) => {
 
     // 7. Side effects
 
-    if (status === "shop_confirmed") {
-      // Trigger manifest creation
-      const { data: o } = await adminClient.from("orders").select("shop_id, requested_delivery_date").eq("id", id).single();
-      if (o) {
-        const { data: m } = await adminClient.from("delivery_manifests").select("id").eq("delivery_date", o.requested_delivery_date).single();
-        let manifestId = m?.id;
-        if (!manifestId) {
-          const { data: newM } = await adminClient.from("delivery_manifests").insert({ delivery_date: o.requested_delivery_date }).select().single();
-          manifestId = newM?.id;
-        }
-        if (manifestId) {
-          await adminClient.from("manifest_stops").insert({ manifest_id: manifestId, shop_id: o.shop_id });
-        }
-      }
-    }
-
     if (status === "delivered") {
       // generate-receipt reads `order_id` from the body (not `orderId`).
       await adminClient.functions.invoke("generate-receipt", { body: { order_id: id } });
