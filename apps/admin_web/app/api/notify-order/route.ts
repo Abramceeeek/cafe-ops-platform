@@ -18,6 +18,8 @@ interface OrderRow {
 
 function messageFor(status: string, date: string): { title: string; body: string } | null {
   switch (status) {
+    case "pending_request":
+      return { title: "New order request", body: `A new order for ${date} needs your review.` };
     case "specialist_approved":
       return { title: "Order approved", body: `Your order for ${date} was approved by the Hub.` };
     case "rejected":
@@ -53,9 +55,28 @@ export async function POST(req: Request) {
     { auth: { persistSession: false } },
   );
 
-  // ready_for_courier → all active couriers; everything else → the shop submitter.
+  // Recipients by status:
+  //  - pending_request   → the specialist(s) who own the order's category (Hub Inbox)
+  //  - ready_for_courier → all active couriers
+  //  - everything else   → the shop submitter
   let tokens: (string | null)[] = [];
-  if (rec.status === "ready_for_courier") {
+  if (rec.status === "pending_request") {
+    const { data: items } = await admin
+      .from("order_items")
+      .select("products(product_categories(assigned_role))")
+      .eq("order_id", rec.id)
+      .limit(1);
+    const assignedRole = (items?.[0] as { products?: { product_categories?: { assigned_role?: string } } } | undefined)
+      ?.products?.product_categories?.assigned_role;
+    if (assignedRole) {
+      const { data } = await admin
+        .from("profiles")
+        .select("fcm_token")
+        .eq("role", assignedRole)
+        .eq("is_active", true);
+      tokens = (data ?? []).map((p) => p.fcm_token as string | null);
+    }
+  } else if (rec.status === "ready_for_courier") {
     const { data } = await admin
       .from("profiles")
       .select("fcm_token")
