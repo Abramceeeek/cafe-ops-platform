@@ -37,24 +37,27 @@ Deno.serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-      auth: { persistSession: false },
-    });
-    
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) {
-      return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
-    }
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const { data: profile } = await userClient
-      .from("profiles")
-      .select("role, shop_id, is_active")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile || !profile.is_active) {
-      return Response.json({ error: "forbidden" }, { status: 403, headers: corsHeaders });
+    // Internal callers (e.g. order-state-change) invoke with the service-role key —
+    // trust them. External callers must be an authenticated, active user.
+    if (authHeader !== `Bearer ${serviceRoleKey}`) {
+      const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
+        auth: { persistSession: false },
+      });
+      const { data: { user } } = await userClient.auth.getUser();
+      if (!user) {
+        return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
+      }
+      const { data: profile } = await userClient
+        .from("profiles")
+        .select("role, shop_id, is_active")
+        .eq("id", user.id)
+        .single();
+      if (!profile || !profile.is_active) {
+        return Response.json({ error: "forbidden" }, { status: 403, headers: corsHeaders });
+      }
     }
 
     const admin = createClient(
