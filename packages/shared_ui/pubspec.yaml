@@ -1,5 +1,5 @@
-name: shared_constants
-description: Shared constants, enums, and themes for HubSync mobile apps.
+name: shared_ui
+description: Shared HubSync UI — adaptive scaffold, responsive helpers, status badge.
 version: 1.0.0
 publish_to: 'none'
 
@@ -9,7 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  google_fonts: ^6.2.1
+  shared_constants:
+    path: ../shared_constants
 
 dev_dependencies:
   flutter_test:
