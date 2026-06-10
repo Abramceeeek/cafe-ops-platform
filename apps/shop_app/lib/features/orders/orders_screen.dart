@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_ui/shared_ui.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/realtime.dart';
 
@@ -26,36 +27,6 @@ class ShopOrder {
     required this.rejectionReason,
     required this.items,
   });
-}
-
-const _statusLabel = {
-  'pending_request': 'Pending',
-  'specialist_approved': 'Approved',
-  'shop_confirmed': 'Confirmed',
-  'in_progress': 'In progress',
-  'packaged': 'Packaged',
-  'ready_for_courier': 'Ready',
-  'in_transit': 'Out for delivery',
-  'delivered': 'Delivered',
-  'rejected': 'Declined',
-  'cancelled': 'Cancelled',
-};
-
-Color _statusColor(String s) {
-  switch (s) {
-    case 'delivered':
-      return Colors.green;
-    case 'rejected':
-    case 'cancelled':
-      return Colors.red;
-    case 'in_transit':
-    case 'ready_for_courier':
-      return Colors.blue;
-    case 'specialist_approved':
-      return Colors.teal;
-    default:
-      return Colors.orange;
-  }
 }
 
 /// The shop's own orders (RLS scopes to the shop + the manager's own role).
@@ -101,7 +72,8 @@ class OrdersScreen extends ConsumerWidget {
           if (list.isEmpty) return const Center(child: Text('No orders yet.'));
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(shopOrdersProvider),
-            child: ListView.builder(
+            child: ContentWidth(
+              child: ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: list.length,
               itemBuilder: (_, i) {
@@ -127,17 +99,7 @@ class OrdersScreen extends ConsumerWidget {
                                 Text('for ${o.deliveryDate}', style: const TextStyle(fontSize: 12)),
                               ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: _statusColor(o.status)),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                _statusLabel[o.status] ?? o.status,
-                                style: TextStyle(color: _statusColor(o.status), fontWeight: FontWeight.bold, fontSize: 12),
-                              ),
-                            ),
+                            OrderStatusBadge(status: o.status),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -168,6 +130,7 @@ class OrdersScreen extends ConsumerWidget {
                   ),
                 );
               },
+              ),
             ),
           );
         },
