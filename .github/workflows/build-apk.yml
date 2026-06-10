@@ -5,7 +5,9 @@ name: build-apk
 # the run's Artifacts and sideload it on a phone. Supabase creds are passed at
 # build time via --dart-define from repo secrets SUPABASE_URL / SUPABASE_ANON_KEY
 # (add them under Settings → Secrets → Actions; the anon key is public-safe).
-# Firebase/push is not wired yet — a debug APK installs without it.
+# Push is wired client-side (FCM handlers); a debug APK still installs and runs
+# without the server pipeline activated. Sending pushes needs the Supabase webhook
+# + Vercel env (FIREBASE_SERVICE_ACCOUNT / NOTIFY_SECRET) configured by the owner.
 on:
   workflow_dispatch:
   push:
@@ -49,6 +51,14 @@ jobs:
           echo "=== settings.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/settings.gradle.kts
           echo "=== app build.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/app/build.gradle.kts
           echo "=== applicationId ==="; grep applicationId android/app/build.gradle.kts
+      - name: Add notification permission (Android 13+)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          # POST_NOTIFICATIONS is a runtime permission on Android 13+; without it
+          # FCM pushes (system tray + foreground) are silently dropped. The android
+          # folder is generated fresh by `flutter create`, so inject it each build.
+          sed -i '/<manifest/a\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' android/app/src/main/AndroidManifest.xml
+          grep -n "POST_NOTIFICATIONS" android/app/src/main/AndroidManifest.xml
       - name: Force compileSdk 36 (newer androidx deps require it)
         working-directory: apps/${{ matrix.app }}
         run: |
