@@ -75,9 +75,9 @@ class _CutoffCountdownState extends State<CutoffCountdown> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
+            children: [
               Text(
                 "CUT-OFF · TOMORROW'S ORDERS",
                 style: TextStyle(color: accent, fontSize: 10.5, fontWeight: FontWeight.bold, letterSpacing: 1.3),
