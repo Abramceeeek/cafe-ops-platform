@@ -32,13 +32,21 @@ class RouteOrder {
 final routeOrdersProvider = FutureProvider<List<RouteOrder>>((ref) async {
   final supabase = ref.watch(supabaseProvider);
   ref.watch(ordersTickProvider); // live re-fetch on any orders change (this app or web)
+  // 15-day delivery window (up to today+14), all pipeline statuses from approval
+  // onward — mirrors the web courier manifest so the courier can plan ahead. The
+  // courier RLS already permits these statuses (migrations 0026 + 0028); if the
+  // live DB predates 0028, the 'specialist_approved' rows just won't appear.
+  final end = DateTime.now().add(const Duration(days: 14));
+  final endStr = '${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}';
   final rows = await supabase
       .from('orders')
       .select(
         'id, status, requested_delivery_date, shops(name, address), '
         'order_items(quantity, unit, products(name))',
       )
-      .inFilter('status', ['ready_for_courier', 'in_transit'])
+      .inFilter('status',
+          ['specialist_approved', 'in_progress', 'packaged', 'ready_for_courier', 'in_transit', 'delivered'])
+      .lte('requested_delivery_date', endStr)
       .order('requested_delivery_date');
   return (rows as List).map((r) {
     final items = (r['order_items'] as List?) ?? [];
@@ -64,6 +72,23 @@ class CourierRouteScreen extends ConsumerStatefulWidget {
 
 class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
   String? _busyId;
+
+  String _statusLabel(String s) {
+    switch (s) {
+      case 'in_transit':
+        return 'In transit';
+      case 'ready_for_courier':
+        return 'Ready';
+      case 'delivered':
+        return 'Delivered';
+      case 'packaged':
+        return 'Packaged';
+      case 'in_progress':
+        return 'In production';
+      default:
+        return 'Approved';
+    }
+  }
 
   Future<void> _advance(RouteOrder o, String to, String okMsg) async {
     setState(() => _busyId = o.id);
@@ -125,6 +150,7 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
                 final o = list[i];
                 final busy = _busyId == o.id;
                 final inTransit = o.status == 'in_transit';
+                final canStart = o.status == 'ready_for_courier';
                 return Card(
                   child: Padding(
                     padding: const EdgeInsets.all(12),
@@ -135,7 +161,7 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(o.shopName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            Text(inTransit ? 'In transit' : 'Ready', style: const TextStyle(fontSize: 12)),
+                            Text(_statusLabel(o.status), style: const TextStyle(fontSize: 12)),
                           ],
                         ),
                         if (o.address != null)
@@ -160,11 +186,21 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
                                   label: Text(busy ? '…' : 'Confirm delivered'),
                                   onPressed: busy ? null : () => _advance(o, 'delivered', 'Delivered'),
                                 )
-                              : FilledButton.icon(
-                                  icon: const Icon(Icons.local_shipping, size: 18),
-                                  label: Text(busy ? '…' : 'Start delivery'),
-                                  onPressed: busy ? null : () => _advance(o, 'in_transit', 'Delivery started'),
-                                ),
+                              : canStart
+                                  ? FilledButton.icon(
+                                      icon: const Icon(Icons.local_shipping, size: 18),
+                                      label: Text(busy ? '…' : 'Start delivery'),
+                                      onPressed: busy ? null : () => _advance(o, 'in_transit', 'Delivery started'),
+                                    )
+                                  : Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        o.status == 'delivered'
+                                            ? 'Delivered'
+                                            : 'Scheduled — waiting for the hub to mark it ready',
+                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                      ),
+                                    ),
                         ),
                       ],
                     ),

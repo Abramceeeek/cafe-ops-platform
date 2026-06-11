@@ -129,6 +129,55 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  Future<void> _saveTemplate() async {
+    final cart = ref.read(cartProvider);
+    if (cart.isEmpty) {
+      _toast('Add items first.');
+      return;
+    }
+    final nameCtrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save as template'),
+        content: TextField(
+          controller: nameCtrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(hintText: 'Template name (e.g. Weekday order)'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    try {
+      final sb = ref.read(supabaseProvider);
+      final uid = sb.auth.currentUser!.id;
+      final profile = await sb.from('profiles').select('shop_id, role').eq('id', uid).single();
+      await sb.rpc('save_order_template', params: {
+        'p_shop_id': profile['shop_id'],
+        'p_created_by': uid,
+        'p_name': name,
+        'p_role': profile['role'],
+        'p_items': cart
+            .map((l) => {
+                  'product_id': l.product.id,
+                  'quantity': l.qty,
+                  if (l.note != null && l.note!.isNotEmpty) 'custom_note': l.note,
+                  if (l.modList.isNotEmpty)
+                    'modifiers': l.modList.map((m) => {'modifier_option_id': m.optionId}).toList(),
+                })
+            .toList(),
+      });
+      _toast('Template "$name" saved.');
+    } catch (e) {
+      _toast('Save failed: $e');
+    }
+  }
+
   Future<void> _openOptions(Product p) async {
     CartLine? existing;
     for (final l in ref.read(cartProvider)) {
@@ -153,7 +202,16 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
     final catalog = ref.watch(catalogProvider);
     final cart = ref.watch(cartProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('New Request')),
+      appBar: AppBar(
+        title: const Text('New Request'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bookmark_add_outlined),
+            tooltip: 'Save as template',
+            onPressed: cart.isEmpty ? null : _saveTemplate,
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(

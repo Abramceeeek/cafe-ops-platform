@@ -11,20 +11,45 @@ class InboxScreen extends ConsumerStatefulWidget {
 
 class _InboxScreenState extends ConsumerState<InboxScreen> {
   String? _busyId;
+  // Per-line amendments, keyed by order_item id (ids are unique across orders).
+  final Map<String, num> _edits = {};
+  final Map<String, bool> _removed = {};
 
   void _toast(String m) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  String _fmtQty(num q) => q % 1 == 0 ? q.toInt().toString() : q.toString();
+
   Future<void> _approve(PendingOrder o) async {
+    // Collect amendments: changed quantities + removed lines.
+    final edits = <Map<String, dynamic>>[];
+    final removed = <String>[];
+    for (final it in o.items) {
+      if (_removed[it.id] == true) {
+        removed.add(it.id);
+        continue;
+      }
+      final q = _edits[it.id] ?? it.qty;
+      if (q != it.qty) edits.add({'id': it.id, 'quantity': q});
+    }
+    if (removed.length == o.items.length) {
+      _toast('Keep at least one item, or reject the order instead.');
+      return;
+    }
     setState(() => _busyId = o.id);
     try {
       await ref.read(supabaseProvider).rpc('specialist_review', params: {
         'p_order_id': o.id,
         'p_approve': true,
+        'p_item_edits': edits,
+        'p_removed_item_ids': removed,
       });
-      if (!mounted) return;
-      _toast('Approved');
+      _toast(edits.isEmpty && removed.isEmpty ? 'Approved' : 'Approved with changes');
+      for (final it in o.items) {
+        _edits.remove(it.id);
+        _removed.remove(it.id);
+      }
       ref.invalidate(pendingOrdersProvider);
     } catch (e) {
       _toast('Failed: $e');
@@ -63,7 +88,6 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
         'p_approve': false,
         'p_reason': reason,
       });
-      if (!mounted) return;
       _toast('Rejected');
       ref.invalidate(pendingOrdersProvider);
     } catch (e) {
@@ -134,17 +158,64 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                                 Text('for ${o.deliveryDate}', style: const TextStyle(fontSize: 12)),
                               ],
                             ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Adjust quantities or remove a line before approving.',
+                              style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                            ),
                             const SizedBox(height: 8),
-                            ...o.items.map((it) => Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(child: Text(it.name)),
-                                      Text('${it.qty} ${it.unit}'),
+                            ...o.items.map((it) {
+                              final removed = _removed[it.id] == true;
+                              final q = _edits[it.id] ?? it.qty;
+                              final changed = !removed && q != it.qty;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        it.name,
+                                        style: removed
+                                            ? const TextStyle(
+                                                decoration: TextDecoration.lineThrough, color: Colors.grey)
+                                            : null,
+                                      ),
+                                    ),
+                                    if (removed)
+                                      TextButton(
+                                        onPressed: busy ? null : () => setState(() => _removed[it.id] = false),
+                                        child: const Text('Undo'),
+                                      )
+                                    else ...[
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(Icons.remove_circle_outline, size: 20),
+                                        onPressed:
+                                            busy || q <= 1 ? null : () => setState(() => _edits[it.id] = q - 1),
+                                      ),
+                                      Text(
+                                        '${_fmtQty(q)} ${it.unit}',
+                                        style: TextStyle(
+                                          fontWeight: changed ? FontWeight.bold : FontWeight.normal,
+                                          color: changed ? Theme.of(context).colorScheme.primary : null,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(Icons.add_circle_outline, size: 20),
+                                        onPressed: busy ? null : () => setState(() => _edits[it.id] = q + 1),
+                                      ),
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(Icons.close, size: 18),
+                                        tooltip: 'Remove line',
+                                        onPressed: busy ? null : () => setState(() => _removed[it.id] = true),
+                                      ),
                                     ],
-                                  ),
-                                )),
+                                  ],
+                                ),
+                              );
+                            }),
                             const SizedBox(height: 12),
                             Row(
                               children: [
