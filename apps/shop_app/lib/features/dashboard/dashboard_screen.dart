@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_ui/shared_ui.dart';
 import '../../core/supabase_provider.dart';
 import '../orders/orders_screen.dart' show shopOrdersProvider, ShopOrder;
+import 'cutoff_countdown.dart';
 
 /// Shop home — stat cards + recent orders, matching the web FOH dashboard.
 class DashboardScreen extends ConsumerWidget {
@@ -54,6 +55,8 @@ class DashboardScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const CutoffCountdown(),
+                      const SizedBox(height: 24),
                       Text('Today at a glance', style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 16),
                       _StatGrid(stats: [

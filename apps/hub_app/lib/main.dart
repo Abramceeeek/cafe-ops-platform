@@ -57,6 +57,7 @@ class _HubAppState extends ConsumerState<HubApp> {
 
     return MaterialApp.router(
       title: AppConstants.appName,
+      debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: scaffoldMessengerKey,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
