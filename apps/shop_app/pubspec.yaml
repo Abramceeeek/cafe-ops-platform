@@ -19,6 +19,8 @@ dependencies:
     path: ../../packages/shared_constants
   shared_models:
     path: ../../packages/shared_models
+  shared_ui:
+    path: ../../packages/shared_ui
 
 dev_dependencies:
   flutter_test:
