@@ -1,15 +1,12 @@
 import { readFileSync } from "node:fs";
-import pg from "../apps/admin_web/node_modules/pg/lib/index.js";
+import pg from "../node_modules/pg/lib/index.js";
+import { assertConfirmedTarget } from "./_confirm-guard.mjs";
 
 const kv = Object.fromEntries(
   readFileSync(new URL("../keys.txt", import.meta.url), "utf8")
     .split(/\r?\n/).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]),
 );
-if (!process.argv.includes("--confirm")) {
-  console.error(`Refusing to run without --confirm — this DELETES the named test users + their data on ${kv.SUPABASE_URL}.`);
-  console.error("Re-run:  node scripts/purge-users.mjs --confirm");
-  process.exit(1);
-}
+assertConfirmedTarget(kv.SUPABASE_URL, "purge-users.mjs");
 const ref = kv.SUPABASE_URL.replace("https://", "").split(".")[0];
 const password = kv.SUPABASE_DB_PASSWORD;
 const candidates = [

@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing Auth header" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -64,33 +64,56 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { id, status, item_edits, removed_item_ids, rejection_reason } = await req.json();
-    if (!id || !status) {
-      return new Response(JSON.stringify({ error: "id and status are required" }), { status: 400, headers: corsHeaders });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400, headers: corsHeaders });
+    }
+    const { id, status, item_edits, removed_item_ids, rejection_reason } = body;
+
+    // Input validation (audit H5): never feed unvalidated shapes into the edit loops.
+    const isUuid = (v: unknown) => typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+    if (!isUuid(id) || typeof status !== "string" || !(status in TRANSITION_ROLES)) {
+      return new Response(JSON.stringify({ error: "invalid_request" }), { status: 400, headers: corsHeaders });
+    }
+    if (removed_item_ids != null && (!Array.isArray(removed_item_ids) || !removed_item_ids.every(isUuid))) {
+      return new Response(JSON.stringify({ error: "invalid_removed_item_ids" }), { status: 400, headers: corsHeaders });
+    }
+    if (item_edits != null && (!Array.isArray(item_edits) ||
+        !item_edits.every((e) => e && typeof e === "object" && isUuid(e.id) && (e.quantity == null || typeof e.quantity === "number")))) {
+      return new Response(JSON.stringify({ error: "invalid_item_edits" }), { status: 400, headers: corsHeaders });
+    }
+    if (rejection_reason != null && typeof rejection_reason !== "string") {
+      return new Response(JSON.stringify({ error: "invalid_rejection_reason" }), { status: 400, headers: corsHeaders });
     }
 
     // 1. Get user & role
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) throw new Error("Unauthorized");
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: corsHeaders });
+    }
 
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
     const role = profile?.role;
-    if (!role) throw new Error("No role assigned");
+    if (!role) {
+      return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: corsHeaders });
+    }
 
     // 2. Validate transition permission
     const allowedRoles = TRANSITION_ROLES[status];
     if (!allowedRoles || !allowedRoles.includes(role)) {
-      return new Response(JSON.stringify({ error: `Role ${role} cannot transition to ${status}` }), { status: 403, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "role_not_permitted" }), { status: 403, headers: corsHeaders });
     }
 
-    // 3. Get current order
+    // 3. Get current order (under caller RLS — they can only see permitted orders)
     const { data: order, error: orderError } = await supabase.from("orders").select("status").eq("id", id).single();
-    if (orderError || !order) throw new Error("Order not found");
+    if (orderError || !order) {
+      return new Response(JSON.stringify({ error: "order_not_found" }), { status: 404, headers: corsHeaders });
+    }
 
     // 4. Validate state machine
     const validNextStates = ORDER_SPEC[order.status] ?? [];
     if (!validNextStates.includes(status)) {
-      return new Response(JSON.stringify({ error: `Cannot transition from ${order.status} to ${status}` }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "invalid_transition" }), { status: 400, headers: corsHeaders });
     }
 
     // 5. Build update (admin client bypasses RLS; role + state machine already validated)
@@ -149,7 +172,9 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders });
+  } catch (err) {
+    // Audit H6: log internals server-side; never leak err.message to the client.
+    console.error("order-state-change error:", err);
+    return new Response(JSON.stringify({ error: "internal_server_error" }), { status: 500, headers: corsHeaders });
   }
 });

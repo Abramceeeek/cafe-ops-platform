@@ -1,0 +1,12 @@
+-- 0040_fix_profile_update_rls.sql
+-- SECURITY FIX (audit C1): the F-17 policy "users_update_own_profile" (0016) granted
+-- authenticated users UPDATE on profiles scoped only by `id = auth.uid()`, with no
+-- column restriction in WITH CHECK. Any signed-in user could therefore run
+--   UPDATE profiles SET role = 'admin' WHERE id = auth.uid();
+-- and self-escalate to admin (immediately if current_role_name() reads the table, or
+-- at the next token mint via custom_access_token_hook).
+--
+-- fcm_token is the only column users legitimately self-update, and that already goes
+-- through the SECURITY DEFINER set_fcm_token() RPC (0039) — both mobile apps call it.
+-- So no self-service UPDATE policy on profiles is needed; dropping it closes the hole.
+DROP POLICY IF EXISTS "users_update_own_profile" ON public.profiles;

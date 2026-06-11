@@ -8,7 +8,9 @@ const kv = Object.fromEntries(
 const db = createClient(kv.SUPABASE_URL, kv.Superbase_service_role, { auth: { persistSession: false } });
 const statePath = new URL("../.design/demo-state.json", import.meta.url);
 const state = existsSync(statePath) ? JSON.parse(readFileSync(statePath, "utf8")) : {};
-const EMAIL = "courier.demo@boboandwild.dev", PASSWORD = "DemoPass123!";
+const EMAIL = "courier.demo@boboandwild.dev";
+const PASSWORD = process.env.DEMO_PASSWORD || kv.DEMO_PASSWORD;
+if (!PASSWORD) { console.error("Set DEMO_PASSWORD in keys.txt or env (see .env.example)."); process.exit(1); }
 
 let id = state.courierId;
 if (!id) {

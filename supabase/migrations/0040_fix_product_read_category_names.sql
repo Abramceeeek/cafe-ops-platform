@@ -1,4 +1,4 @@
--- 0022_fix_product_read_category_names.sql
+-- 0040_fix_product_read_category_names.sql
 -- 0021's role_based_read_products filtered on category names that don't exist in
 -- this database ('Pastry / Sweet', 'Retail Bakery', 'Bread', 'Meat'), so the
 -- policy matched nothing and FOH/Kitchen managers saw ZERO products in the
