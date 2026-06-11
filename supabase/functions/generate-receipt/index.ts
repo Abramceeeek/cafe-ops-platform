@@ -40,7 +40,9 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     // Internal callers (e.g. order-state-change) invoke with the service-role key —
-    // trust them. External callers must be an authenticated, active user.
+    // trust them (profile stays null). External callers must be an authenticated,
+    // active user; profile is then used for the shop-ownership check below.
+    let profile: { role: string; shop_id: string | null; is_active: boolean } | null = null;
     if (authHeader !== `Bearer ${serviceRoleKey}`) {
       const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
         global: { headers: { Authorization: authHeader } },
@@ -50,14 +52,15 @@ Deno.serve(async (req) => {
       if (!user) {
         return Response.json({ error: "unauthorized" }, { status: 401, headers: corsHeaders });
       }
-      const { data: profile } = await userClient
+      const { data: p } = await userClient
         .from("profiles")
         .select("role, shop_id, is_active")
         .eq("id", user.id)
         .single();
-      if (!profile || !profile.is_active) {
+      if (!p || !p.is_active) {
         return Response.json({ error: "forbidden" }, { status: 403, headers: corsHeaders });
       }
+      profile = p;
     }
 
     const admin = createClient(
@@ -79,8 +82,9 @@ Deno.serve(async (req) => {
       
     if (error || !order) return Response.json({ error: "order_not_found" }, { status: 404, headers: corsHeaders });
 
-    // Authorization: Admin or owning shop manager
-    if (profile.role !== "admin") {
+    // Authorization: external callers must be admin or the owning shop manager.
+    // Internal (service-role) callers have profile === null and are trusted.
+    if (profile && profile.role !== "admin") {
       if ((profile.role !== "foh_manager" && profile.role !== "kitchen_manager") || profile.shop_id !== order.shop_id) {
         return Response.json({ error: "not_your_shop" }, { status: 403, headers: corsHeaders });
       }

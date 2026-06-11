@@ -4,6 +4,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
+import { randomBytes } from "crypto";
 
 export async function createUser(payload: { email: string; full_name: string; role: string; shop_id?: string }) {
   const cookieStore = await cookies();
@@ -33,7 +34,8 @@ export async function createUser(payload: { email: string; full_name: string; ro
 
   const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } });
 
-  const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
+  // Cryptographically-secure temp password (audit H7); admin shares it out-of-band.
+  const tempPassword = randomBytes(12).toString("base64url");
 
   const { data: authData, error: authErr } = await admin.auth.admin.createUser({
     email: payload.email,

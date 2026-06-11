@@ -8,9 +8,12 @@ const kv = Object.fromEntries(
 console.log("URL:", kv.SUPABASE_URL);
 console.log("anon key len:", kv.Superbase_anon_public?.length, "| service len:", kv.Superbase_service_role?.length);
 
+const PASSWORD = process.env.DEMO_PASSWORD || kv.DEMO_PASSWORD;
+if (!PASSWORD) { console.error("Set DEMO_PASSWORD in keys.txt or env (see .env.example)."); process.exit(1); }
+
 // 1. Test a KNOWN demo login via the anon key (exactly what the web app does)
 const anon = createClient(kv.SUPABASE_URL, kv.Superbase_anon_public, { auth: { persistSession: false } });
-const { data: s, error: e } = await anon.auth.signInWithPassword({ email: "foh.demo@boboandwild.dev", password: "DemoPass123!" });
+const { data: s, error: e } = await anon.auth.signInWithPassword({ email: "foh.demo@boboandwild.dev", password: PASSWORD });
 console.log("\nKNOWN demo login (foh.demo):", e ? "FAIL → " + e.message + " [status " + (e.status ?? "?") + "]" : "OK, user " + s.user.id);
 
 // 2. Aggregate auth-user confirmation status (no email dump)

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createClient } from "../apps/admin_web/node_modules/@supabase/supabase-js/dist/index.mjs";
+import { assertConfirmedTarget } from "./_confirm-guard.mjs";
 
 function parseKV(path) {
   return Object.fromEntries(
@@ -13,11 +14,7 @@ function parseKV(path) {
 
 const keys = parseKV("../keys.txt");
 const db = createClient(keys.SUPABASE_URL, keys.Superbase_service_role, { auth: { persistSession: false } });
-if (!process.argv.includes("--confirm")) {
-  console.error(`Refusing to run without --confirm — this DELETES ALL orders and related rows on ${keys.SUPABASE_URL}.`);
-  console.error("Re-run:  node scripts/db-wipe-orders.mjs --confirm");
-  process.exit(1);
-}
+assertConfirmedTarget(keys.SUPABASE_URL, "db-wipe-orders.mjs");
 const ALL = (q) => q.not("id", "is", null); // PostgREST requires a filter; matches every row
 
 async function count(t) {

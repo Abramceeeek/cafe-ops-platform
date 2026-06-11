@@ -17,7 +17,8 @@ const supabaseServiceKey = kv.Superbase_service_role;
 const adminDb = createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } });
 
 // Common test password
-const PASSWORD = "DemoPass123!";
+const PASSWORD = process.env.DEMO_PASSWORD || kv.DEMO_PASSWORD;
+if (!PASSWORD) { console.error("Set DEMO_PASSWORD in keys.txt or env (see .env.example)."); process.exit(1); }
 
 async function ensureUser(email, fullName, role, shopId = null) {
   // Try to find user by email

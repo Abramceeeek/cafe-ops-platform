@@ -26,7 +26,8 @@ const hubUsers = [
   { email: "delivery@boboandwild.com", role: "courier", name: "Delivery Guy", shopId: null },
 ];
 
-const DEFAULT_PASSWORD = "Welcome123!";
+const DEFAULT_PASSWORD = process.env.SEED_PASSWORD;
+if (!DEFAULT_PASSWORD) { console.error("Set SEED_PASSWORD env var (see .env.example)."); process.exit(1); }
 
 async function run() {
   console.log("Fetching shops from DB...");

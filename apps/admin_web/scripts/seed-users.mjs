@@ -6,10 +6,10 @@ import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const password = process.env.SEED_PASSWORD || "Hubsync123!";
+const password = process.env.SEED_PASSWORD;
 
-if (!url || !serviceKey) {
-  console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY (put them in .env.local).");
+if (!url || !serviceKey || !password) {
+  console.error("Missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or SEED_PASSWORD (put them in .env.local).");
   process.exit(1);
 }
 
