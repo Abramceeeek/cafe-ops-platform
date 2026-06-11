@@ -426,57 +426,6 @@ export async function updateOrderStatus(payload: {
   if (uErr) return { error: "internal_server_error", details: uErr.message };
   if (!updated) return { error: "concurrent_modification" };
 
-  if (payload.new_status === "shop_confirmed" && order.assigned_courier) {
-    const courierId = patch.assigned_courier as string;
-    const deliveryDate = order.requested_delivery_date;
-    const shopId = order.shop_id;
-
-    let manifestId: string;
-    const { data: existingManifest } = await admin
-      .from("delivery_manifests")
-      .select("id")
-      .eq("courier_id", courierId)
-      .eq("delivery_date", deliveryDate)
-      .limit(1)
-      .maybeSingle();
-
-    if (existingManifest) {
-      manifestId = existingManifest.id;
-    } else {
-      const { data: newManifest } = await admin
-        .from("delivery_manifests")
-        .insert({ courier_id: courierId, delivery_date: deliveryDate })
-        .select("id")
-        .single();
-      manifestId = newManifest!.id;
-    }
-
-    const { data: existingStop } = await admin
-      .from("manifest_stops")
-      .select("id")
-      .eq("manifest_id", manifestId)
-      .eq("shop_id", shopId)
-      .maybeSingle();
-    
-    if (!existingStop) {
-      const { data: seqData } = await admin
-        .from("manifest_stops")
-        .select("stop_sequence")
-        .eq("manifest_id", manifestId)
-        .order("stop_sequence", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-        
-      const nextSeq = (seqData?.stop_sequence || 0) + 1;
-
-      await admin.from("manifest_stops").insert({
-        manifest_id: manifestId,
-        shop_id: shopId,
-        stop_sequence: nextSeq
-      });
-    }
-  }
-
   if (payload.new_status === "delivered") {
     const { data: manifest } = await admin
       .from("delivery_manifests")

@@ -52,18 +52,34 @@ export function CountdownBanner({ serverNowStr }: { serverNowStr: string }) {
 }
 
 function calculateCutoff(now: Date) {
-  const london = new Date(now.toLocaleString("en-US", { timeZone: "Europe/London" }));
-  const cutoff = new Date(london);
-  cutoff.setHours(16, 0, 0, 0);
-  const remainingMin = Math.floor((cutoff.getTime() - london.getTime()) / 60000);
+  // Read London's wall-clock directly (DST-safe). Reparsing a localized string
+  // via `new Date(now.toLocaleString(...))` would be interpreted in the browser's
+  // own timezone, giving a wrong countdown for anyone not on London/UTC.
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  let lh = get("hour");
+  if (lh === 24) lh = 0; // some engines render midnight as "24"
+  const remainingMin = Math.floor((16 * 3600 - (lh * 3600 + get("minute") * 60 + get("second"))) / 60);
   const open = remainingMin > 0;
-  const next = new Date(london);
-  next.setDate(next.getDate() + (open ? 1 : 2));
+
+  // Next delivery window = London calendar date + 1 day (open) / +2 (closed).
+  const next = new Date(Date.UTC(get("year"), get("month") - 1, get("day")));
+  next.setUTCDate(next.getUTCDate() + (open ? 1 : 2));
+
   return {
     open,
     h: Math.max(0, Math.floor(remainingMin / 60)),
     m: Math.max(0, remainingMin % 60),
     fill: open ? Math.min(100, Math.max(4, ((960 - remainingMin) / 960) * 100)) : 100,
-    nextLabel: next.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }),
+    nextLabel: next.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }),
   };
 }

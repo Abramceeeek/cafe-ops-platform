@@ -72,7 +72,8 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
         'p_order_id': o.id,
         'p_to': to,
       });
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(okMsg)));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(okMsg)));
       ref.invalidate(routeOrdersProvider);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));

@@ -166,6 +166,7 @@ class _TemplatesScreenState extends ConsumerState<TemplatesScreen> {
     if (ok != true) return;
     try {
       await ref.read(supabaseProvider).from('order_templates').delete().eq('id', t.id);
+      if (!mounted) return;
       ref.invalidate(templatesProvider);
       _toast('Template deleted.');
     } catch (e) {

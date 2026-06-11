@@ -54,7 +54,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
       firstDate: today,
       lastDate: today.add(const Duration(days: 30)),
     );
-    if (picked != null) setState(() => _date = picked);
+    if (picked != null && mounted) setState(() => _date = picked);
   }
 
   Future<void> _submit() async {

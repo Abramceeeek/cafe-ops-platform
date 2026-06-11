@@ -23,6 +23,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
         'p_order_id': o.id,
         'p_approve': true,
       });
+      if (!mounted) return;
       _toast('Approved');
       ref.invalidate(pendingOrdersProvider);
     } catch (e) {
@@ -62,6 +63,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
         'p_approve': false,
         'p_reason': reason,
       });
+      if (!mounted) return;
       _toast('Rejected');
       ref.invalidate(pendingOrdersProvider);
     } catch (e) {
