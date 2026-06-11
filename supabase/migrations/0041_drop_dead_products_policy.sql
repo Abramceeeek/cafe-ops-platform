@@ -1,4 +1,4 @@
--- 0023_drop_dead_products_policy.sql
+-- 0041_drop_dead_products_policy.sql
 -- Removes the dead, broken products SELECT policy created in 0021. That policy
 -- references category names that do not exist in the live catalog
 -- ('Pastry / Sweet', 'Retail Bakery', 'Bread', 'Meat') so its IN-subqueries are
