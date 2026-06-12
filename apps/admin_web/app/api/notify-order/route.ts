@@ -14,16 +14,27 @@ interface OrderRow {
   submitted_by: string | null;
   shop_id: string | null;
   requested_delivery_date: string | null;
+  is_emergency?: boolean | null;
+  was_edited?: boolean | null;
 }
 
-function messageFor(status: string, date: string): { title: string; body: string } | null {
-  switch (status) {
+function messageFor(rec: OrderRow): { title: string; body: string } | null {
+  const date = rec.requested_delivery_date ?? "";
+  switch (rec.status) {
     case "pending_request":
-      return { title: "New order request", body: `A new order for ${date} needs your review.` };
+      // Emergency orders (placed after the cut-off) get a distinct, urgent push.
+      return rec.is_emergency
+        ? { title: "⚠️ EMERGENCY order", body: `An emergency order for ${date} needs urgent review — placed after the cut-off.` }
+        : { title: "New order request", body: `A new order for ${date} needs your review.` };
     case "specialist_approved":
-      return { title: "Order approved", body: `Your order for ${date} was approved by the Hub.` };
+      // Tell the shop when the Hub adjusted quantities / removed lines on approval.
+      return rec.was_edited
+        ? { title: "Order approved — with changes", body: `Your order for ${date} was approved, but quantities were adjusted — check the app.` }
+        : { title: "Order approved", body: `Your order for ${date} was approved by the Hub.` };
     case "rejected":
       return { title: "Order declined", body: `Your order for ${date} was declined — check the app for the reason.` };
+    case "cancelled":
+      return { title: "Order cancelled", body: `An order for ${date} was cancelled — no need to produce it.` };
     case "ready_for_courier":
       return { title: "Order ready for pickup", body: `An order for ${date} is ready for delivery.` };
     case "in_transit":
@@ -46,7 +57,7 @@ export async function POST(req: Request) {
   if (!rec?.status || !rec.id) return NextResponse.json({ skipped: "no record" });
   if (old && old.status === rec.status) return NextResponse.json({ skipped: "status unchanged" });
 
-  const msg = messageFor(rec.status, rec.requested_delivery_date ?? "");
+  const msg = messageFor(rec);
   if (!msg) return NextResponse.json({ skipped: "no notification for status" });
 
   const admin = createClient(
@@ -56,11 +67,12 @@ export async function POST(req: Request) {
   );
 
   // Recipients by status:
-  //  - pending_request   → the specialist(s) who own the order's category (Hub Inbox)
-  //  - ready_for_courier → all active couriers
-  //  - everything else   → the shop submitter
+  //  - pending_request / cancelled → the specialist(s) who own the order's category
+  //    (new request to review, or stop-producing notice)
+  //  - ready_for_courier           → all active couriers
+  //  - everything else             → the shop submitter
   let tokens: (string | null)[] = [];
-  if (rec.status === "pending_request") {
+  if (rec.status === "pending_request" || rec.status === "cancelled") {
     const { data: items } = await admin
       .from("order_items")
       .select("products(product_categories(assigned_role))")
