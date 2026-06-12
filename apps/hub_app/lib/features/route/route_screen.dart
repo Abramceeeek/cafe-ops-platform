@@ -107,6 +107,127 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
     }
   }
 
+  static const _wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  String _ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String _dayLabel(String dateStr, DateTime today) {
+    final p = dateStr.split('-');
+    if (p.length != 3) return dateStr;
+    final d = DateTime.utc(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]));
+    final t = DateTime.utc(today.year, today.month, today.day);
+    final diff = d.difference(t).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Tomorrow';
+    return '${_wd[d.weekday - 1]} ${d.day} ${_mo[d.month - 1]}';
+  }
+
+  /// Group deliveries by day — Overdue, Today, Tomorrow, then dated — like the web manifest.
+  List<Widget> _buildSections(List<RouteOrder> list) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todayStr = _ymd(today);
+    final overdue = <RouteOrder>[];
+    final byDate = <String, List<RouteOrder>>{};
+    for (final o in list) {
+      if (o.deliveryDate.compareTo(todayStr) < 0 && o.status != 'delivered') {
+        overdue.add(o);
+      } else {
+        (byDate[o.deliveryDate] ??= <RouteOrder>[]).add(o);
+      }
+    }
+    final dates = byDate.keys.toList()..sort();
+    final out = <Widget>[];
+    if (overdue.isNotEmpty) {
+      out.add(_sectionHeader('Overdue', overdue.length, overdue: true));
+      out.addAll(overdue.map(_card));
+    }
+    for (final ds in dates) {
+      final group = byDate[ds]!;
+      out.add(_sectionHeader(_dayLabel(ds, today), group.length));
+      out.addAll(group.map(_card));
+    }
+    return out;
+  }
+
+  Widget _sectionHeader(String label, int count, {bool overdue = false}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: overdue ? Colors.red : null),
+          ),
+          const SizedBox(width: 8),
+          Text('$count', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+
+  Widget _card(RouteOrder o) {
+    final busy = _busyId == o.id;
+    final inTransit = o.status == 'in_transit';
+    final canStart = o.status == 'ready_for_courier';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(o.shopName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(_statusLabel(o.status), style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+            if (o.address != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(o.address!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              ),
+            const SizedBox(height: 8),
+            ...o.items.map((it) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [Expanded(child: Text(it.name)), Text('${it.qty} ${it.unit}')],
+                  ),
+                )),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: inTransit
+                  ? FilledButton.icon(
+                      icon: const Icon(Icons.check, size: 18),
+                      label: Text(busy ? '…' : 'Confirm delivered'),
+                      onPressed: busy ? null : () => _advance(o, 'delivered', 'Delivered'),
+                    )
+                  : canStart
+                      ? FilledButton.icon(
+                          icon: const Icon(Icons.local_shipping, size: 18),
+                          label: Text(busy ? '…' : 'Start delivery'),
+                          onPressed: busy ? null : () => _advance(o, 'in_transit', 'Delivery started'),
+                        )
+                      : Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            o.status == 'delivered'
+                                ? 'Delivered'
+                                : 'Scheduled — waiting for the hub to mark it ready',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = ref.watch(routeOrdersProvider);
@@ -140,73 +261,12 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Failed to load:\n$e', textAlign: TextAlign.center)),
         data: (list) {
-          if (list.isEmpty) return const Center(child: Text('No deliveries right now.'));
+          if (list.isEmpty) return const Center(child: Text('No deliveries in the next 15 days.'));
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(routeOrdersProvider),
-            child: ListView.builder(
+            child: ListView(
               padding: const EdgeInsets.all(12),
-              itemCount: list.length,
-              itemBuilder: (_, i) {
-                final o = list[i];
-                final busy = _busyId == o.id;
-                final inTransit = o.status == 'in_transit';
-                final canStart = o.status == 'ready_for_courier';
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(o.shopName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            Text(_statusLabel(o.status), style: const TextStyle(fontSize: 12)),
-                          ],
-                        ),
-                        if (o.address != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(o.address!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                          ),
-                        const SizedBox(height: 8),
-                        ...o.items.map((it) => Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [Expanded(child: Text(it.name)), Text('${it.qty} ${it.unit}')],
-                              ),
-                            )),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: inTransit
-                              ? FilledButton.icon(
-                                  icon: const Icon(Icons.check, size: 18),
-                                  label: Text(busy ? '…' : 'Confirm delivered'),
-                                  onPressed: busy ? null : () => _advance(o, 'delivered', 'Delivered'),
-                                )
-                              : canStart
-                                  ? FilledButton.icon(
-                                      icon: const Icon(Icons.local_shipping, size: 18),
-                                      label: Text(busy ? '…' : 'Start delivery'),
-                                      onPressed: busy ? null : () => _advance(o, 'in_transit', 'Delivery started'),
-                                    )
-                                  : Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        o.status == 'delivered'
-                                            ? 'Delivered'
-                                            : 'Scheduled — waiting for the hub to mark it ready',
-                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                                      ),
-                                    ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+              children: _buildSections(list),
             ),
           );
         },
