@@ -1,0 +1,54 @@
+name: build-ios
+
+# Verifies the two Flutter apps compile for iOS on a macOS runner (free for
+# public repos). Builds UNSIGNED — proves the code is iOS-ready WITHOUT needing
+# an Apple Developer account. Once the account + signing certs exist, this is
+# extended to produce a signed .ipa + upload to TestFlight (see docs/IOS_SETUP.md).
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/ios-build]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: ios
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [shop_app, hub_app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS platform files
+        working-directory: apps/${{ matrix.app }}
+        run: flutter create --platforms=ios --org com.hubsync .
+      - name: Set bundle id + iOS 13 deployment target
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
+          NEW="com.hubsync.${SHORT}"
+          echo "Setting bundle id -> $NEW"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${NEW};/g" ios/Runner.xcodeproj/project.pbxproj
+          # Firebase pods need iOS 13+; flutter create comments the platform line out.
+          sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile || true
+          grep -q "platform :ios" ios/Podfile || sed -i '' "1i\\
+          platform :ios, '13.0'
+          " ios/Podfile
+          echo "=== Podfile platform ==="; grep "platform :ios" ios/Podfile
+          echo "=== bundle ids ==="; grep PRODUCT_BUNDLE_IDENTIFIER ios/Runner.xcodeproj/project.pbxproj | head -3
+      - name: Build iOS (unsigned — verifies the code compiles)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - name: Result
+        run: echo "✅ ${{ matrix.app }} compiles for iOS (unsigned). Signing + TestFlight need the Apple account."
