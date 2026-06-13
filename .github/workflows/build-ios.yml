@@ -29,16 +29,46 @@ jobs:
       - name: Generate iOS platform files
         working-directory: apps/${{ matrix.app }}
         run: flutter create --platforms=ios --org com.hubsync .
-      - name: Configure iOS (bundle id + deployment target)
+      - name: Configure iOS (bundle id + write Podfile)
         working-directory: apps/${{ matrix.app }}
         run: |
           SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
           NEW="com.hubsync.${SHORT}"
           echo "Setting bundle id -> $NEW"
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${NEW};/g" ios/Runner.xcodeproj/project.pbxproj
-          # Firebase 15.x iOS pods need iOS 13+; uncomment the platform line in place.
-          sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile
-          echo "=== Podfile head ==="; head -25 ios/Podfile
+          # flutter create does not reliably emit a Podfile — write the standard one
+          # (iOS 13 for Firebase 15.x). flutter build respects an existing Podfile.
+          cat > ios/Podfile <<'PODFILE'
+          platform :ios, '13.0'
+          ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+          project 'Runner', {
+            'Debug' => :debug,
+            'Profile' => :release,
+            'Release' => :release,
+          }
+          def flutter_root
+            generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+            unless File.exist?(generated_xcode_build_settings_path)
+              raise "Generated.xcconfig must exist. Run flutter pub get first."
+            end
+            File.foreach(generated_xcode_build_settings_path) do |line|
+              matches = line.match(/FLUTTER_ROOT\=(.*)/)
+              return matches[1].strip if matches
+            end
+            raise "FLUTTER_ROOT not found. Run flutter pub get first."
+          end
+          require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+          flutter_ios_podfile_setup
+          target 'Runner' do
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+          end
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+            end
+          end
+          PODFILE
+          echo "=== Podfile written ==="; head -3 ios/Podfile
       - name: Build iOS (unsigned — verifies the code compiles)
         working-directory: apps/${{ matrix.app }}
         run: |
