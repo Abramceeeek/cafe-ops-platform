@@ -1,10 +1,14 @@
 import { readFileSync } from "node:fs";
 import pg from "../apps/admin_web/node_modules/pg/lib/index.js";
+import { assertConfirmedTarget } from "./_confirm-guard.mjs";
 
 const kv = Object.fromEntries(
   readFileSync(new URL("../keys.txt", import.meta.url), "utf8")
     .split(/\r?\n/).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]),
 );
+// apply-sql runs ARBITRARY SQL against live — require `--confirm <project-ref>` like
+// the other destructive scripts so a swapped keys.txt can't silently target prod.
+assertConfirmedTarget(kv.SUPABASE_URL, "apply-sql.mjs");
 const ref = kv.SUPABASE_URL.replace("https://", "").split(".")[0];
 const password = kv.SUPABASE_DB_PASSWORD;
 const sqlPath = process.argv[2];

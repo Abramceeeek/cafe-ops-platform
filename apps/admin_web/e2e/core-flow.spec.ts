@@ -4,7 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 // interactive — catches blank pages, broken routes, RLS-empty catalogs, theme
 // regressions. Full submit→approve→deliver mutation flow is a follow-up (needs a
 // hermetic seeded DB so it can run in CI without touching prod).
-const PASSWORD = process.env.STAFF_PASSWORD;
+const PASSWORD: string = process.env.STAFF_PASSWORD ?? "";
 if (!PASSWORD) throw new Error("Set STAFF_PASSWORD env var to run the e2e suite");
 
 async function login(page: Page, email: string) {

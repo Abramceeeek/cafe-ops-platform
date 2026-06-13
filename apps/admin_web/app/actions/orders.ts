@@ -283,6 +283,7 @@ const STATUS_TIMESTAMP: Record<string, string> = {
   in_progress: "in_progress_at",
   packaged: "packaged_at",
   ready_for_courier: "ready_at",
+  in_transit: "in_transit_at",
   delivered: "delivered_at",
 };
 
@@ -377,6 +378,15 @@ export async function updateOrderStatus(payload: {
       const { error } = await admin.from("order_items").update({ quantity: e.quantity }).eq("id", e.id).eq("order_id", payload.order_id);
       if (error) return { error: "internal_server_error", details: error.message };
     }
+
+    // Audit 2026-06-13: never strand an order with zero line items (mirrors the
+    // specialist_review (0041) + change_order_status (0043) DB guards, on the web path).
+    const { count: remaining } = await admin
+      .from("order_items")
+      .select("id", { count: "exact", head: true })
+      .eq("order_id", payload.order_id)
+      .gt("quantity", 0);
+    if (!remaining) return { error: "cannot_transition_empty_order" };
   }
 
   // On approval, price every surviving line from the admin-set product price

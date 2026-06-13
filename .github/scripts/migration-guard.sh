@@ -40,4 +40,20 @@ if [ -n "$bad" ]; then
   exit 1
 fi
 
+# Duplicate migration-number guard (audit 2026-06-13 H6). Two legacy duplicate
+# prefixes (0040, 0041) predate this check and are already applied live; renaming
+# them would trip the immutability diff above, so they are allow-listed. Any NEW
+# duplicate number fails CI.
+LEGACY_DUP_ALLOW=" 0040 0041 "
+dups=$(find "$MIG_DIR" -maxdepth 1 -name '*.sql' -exec basename {} \; | grep -oE '^[0-9]+' | sort | uniq -d || true)
+for d in $dups; do
+  case "$LEGACY_DUP_ALLOW" in
+    *" $d "*) echo "db-migration-guard: legacy duplicate prefix $d (allow-listed)." ;;
+    *)
+      echo "::error::Duplicate migration number $d — each numbered migration must be unique (PROJECT_SPEC §5)."
+      exit 1
+      ;;
+  esac
+done
+
 echo "db-migration-guard: OK."

@@ -25,39 +25,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const admin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } },
-  );
+  try {
+    const admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } },
+    );
 
-  const tomorrow = tomorrowLondon(new Date());
+    const tomorrow = tomorrowLondon(new Date());
 
-  const { data: managers } = await admin
-    .from("profiles")
-    .select("fcm_token, shop_id")
-    .in("role", ["foh_manager", "kitchen_manager"])
-    .eq("is_active", true)
-    .not("shop_id", "is", null);
+    const { data: managers } = await admin
+      .from("profiles")
+      .select("fcm_token, shop_id")
+      .in("role", ["foh_manager", "kitchen_manager"])
+      .eq("is_active", true)
+      .not("shop_id", "is", null);
 
-  const { data: confirmed } = await admin
-    .from("orders")
-    .select("shop_id")
-    .eq("requested_delivery_date", tomorrow)
-    .in("status", CONFIRMED_STATUSES);
+    const { data: confirmed } = await admin
+      .from("orders")
+      .select("shop_id")
+      .eq("requested_delivery_date", tomorrow)
+      .in("status", CONFIRMED_STATUSES);
 
-  const sortedShops = new Set((confirmed ?? []).map((o) => o.shop_id as string));
-  const tokens = (managers ?? [])
-    .filter((m) => !sortedShops.has(m.shop_id as string))
-    .map((m) => m.fcm_token as string | null);
+    const sortedShops = new Set((confirmed ?? []).map((o) => o.shop_id as string));
+    const tokens = (managers ?? [])
+      .filter((m) => !sortedShops.has(m.shop_id as string))
+      .map((m) => m.fcm_token as string | null);
 
-  if (tokens.filter(Boolean).length === 0) return NextResponse.json({ ok: true, pushed: 0 });
+    if (tokens.filter(Boolean).length === 0) return NextResponse.json({ ok: true, pushed: 0 });
 
-  const res = await sendPush(
-    tokens,
-    "Cut-off coming up",
-    `Place your order for ${tomorrow} before 16:00 — your shop hasn't ordered yet.`,
-    { kind: "cutoff_reminder" },
-  );
-  return NextResponse.json({ ok: true, pushed: res.sent });
+    const res = await sendPush(
+      tokens,
+      "Cut-off coming up",
+      `Place your order for ${tomorrow} before 16:00 — your shop hasn't ordered yet.`,
+      { kind: "cutoff_reminder" },
+    );
+    return NextResponse.json({ ok: true, pushed: res.sent });
+  } catch (err) {
+    console.error("notify-cutoff failed:", err);
+    return NextResponse.json({ error: "internal_server_error" }, { status: 500 });
+  }
 }
