@@ -41,7 +41,7 @@ jobs:
           grep -q "platform :ios" ios/Podfile || printf "platform :ios, '13.0'\n%s" "$(cat ios/Podfile)" > ios/Podfile
           # Fix the firebase_messaging non-modular Firebase.h error two ways:
           # (a) build all pods as clang modules, (b) allow non-modular includes.
-          perl -0pi -e "s/(target 'Runner' do)/\$1\n  use_modular_headers!/" ios/Podfile
+          perl -0pi -e "s/(target 'Runner' do)/\$1\n  use_frameworks! :linkage => :static\n  use_modular_headers!/" ios/Podfile
           perl -0pi -e 's/(flutter_additional_ios_build_settings\(target\))/$1\n    target.build_configurations.each do |bc|\n      bc.build_settings["CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES"] = "YES"\n    end/' ios/Podfile
           echo "=== Podfile target ==="; sed -n "/target 'Runner'/,/^end/p" ios/Podfile | head -6
           echo "=== Podfile platform ==="; grep "platform :ios" ios/Podfile
