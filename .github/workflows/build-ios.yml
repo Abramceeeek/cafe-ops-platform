@@ -29,20 +29,20 @@ jobs:
       - name: Generate iOS platform files
         working-directory: apps/${{ matrix.app }}
         run: flutter create --platforms=ios --org com.hubsync .
-      - name: Set bundle id + iOS 13 deployment target
+      - name: Configure iOS (bundle id, iOS 13, Firebase modular-header fix)
         working-directory: apps/${{ matrix.app }}
         run: |
           SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
           NEW="com.hubsync.${SHORT}"
           echo "Setting bundle id -> $NEW"
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${NEW};/g" ios/Runner.xcodeproj/project.pbxproj
-          # Firebase pods need iOS 13+; flutter create comments the platform line out.
+          # Firebase pods need iOS 13+ (flutter create comments the platform line out).
           sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile || true
-          grep -q "platform :ios" ios/Podfile || sed -i '' "1i\\
-          platform :ios, '13.0'
-          " ios/Podfile
+          grep -q "platform :ios" ios/Podfile || printf "platform :ios, '13.0'\n%s" "$(cat ios/Podfile)" > ios/Podfile
+          # Fix: firebase_messaging imports a non-modular Firebase.h — allow it in pod targets.
+          perl -0pi -e 's/(flutter_additional_ios_build_settings\(target\))/$1\n    target.build_configurations.each do |bc|\n      bc.build_settings["CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES"] = "YES"\n    end/' ios/Podfile
           echo "=== Podfile platform ==="; grep "platform :ios" ios/Podfile
-          echo "=== bundle ids ==="; grep PRODUCT_BUNDLE_IDENTIFIER ios/Runner.xcodeproj/project.pbxproj | head -3
+          echo "=== Podfile post_install ==="; sed -n '/post_install/,/^end/p' ios/Podfile
       - name: Build iOS (unsigned — verifies the code compiles)
         working-directory: apps/${{ matrix.app }}
         run: |
