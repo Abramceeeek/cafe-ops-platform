@@ -14,7 +14,7 @@
 5. [Database Schema](#5-database-schema)
 6. [User Roles & RBAC](#6-user-roles--rbac)
 7. [Order Lifecycle & State Machine](#7-order-lifecycle--state-machine)
-8. [Two-Way Handshake — Full Technical Flow](#8-two-way-handshake--full-technical-flow)
+8. [Order Flow — Full Technical Flow](#8-order-flow--full-technical-flow)
 9. [Product Catalog Architecture](#9-product-catalog-architecture)
 10. [Timing Protocols & Cut-off Logic](#10-timing-protocols--cut-off-logic)
 11. [Operational Dashboards — Screen-by-Screen Spec](#11-operational-dashboards--screen-by-screen-spec)
@@ -69,7 +69,7 @@ These are non-negotiable. If a proposed feature conflicts with one of these, the
 | C3 | Products are never flat items. They require Modifier chains. | "Beef" is not an order. "Beef → Minced → Cooked" is. |
 | C4 | Lead times are system-enforced, not advisory. | The app physically blocks invalid delivery date selections. |
 | C5 | All timestamps validated server-side. | Device clocks can be manipulated to beat the 4:00 PM cut-off. |
-| C6 | Orders are immutable after Final Confirm. | If more is needed, a new Request is opened. No patching confirmed orders. |
+| C6 | Orders are immutable after Specialist approval. | If more is needed, a new Request is opened. No patching approved orders. |
 | C7 | Hub production queues are strictly role-filtered. | The Bread Baker must never see a Meat order. |
 | C8 | RLS enforced at the database level, not just the app. | App-level filtering is not sufficient; Supabase RLS is the authoritative gate. |
 | C9 | Shop A cannot read Shop B's data. | Multi-tenant isolation is non-negotiable. |
@@ -551,15 +551,15 @@ CREATE POLICY "admin_read_all_receipts" ON receipts
 | Status | Meaning | Who can see it |
 |---|---|---|
 | `pending_request` | Shop has submitted; awaiting Specialist approval | Originating Shop + Admin |
-| `specialist_approved` | Specialist confirmed capability; awaiting Shop's Final Confirm | Originating Shop + Specialist + Admin |
-| `shop_confirmed` | Both approvals complete; order is live | Shop + Specialist + Courier + Admin |
+| `specialist_approved` | Specialist approved & priced; queued for delivery (approval is final — no Shop re-confirm) | Originating Shop + Specialist + Admin |
+| `shop_confirmed` | **Legacy / unused.** Kept in the enum, but no flow transitions into it (the Final Confirm step was removed — see §8) | Shop + Specialist + Courier + Admin |
 | `in_progress` | Specialist has started production | Shop + Specialist + Admin |
 | `packaged` | Items physically packed and labelled | Shop + Specialist + Courier + Admin |
 | `ready_for_courier` | Order in Courier's queue | Courier + Admin |
 | `in_transit` | Courier has picked up and is on route | Shop + Courier + Admin |
 | `delivered` | Shop signed off. Receipt generated. | All roles |
 | `rejected` | Specialist rejected the request (unable to fulfil) | Originating Shop + Admin |
-| `cancelled` | Shop cancelled before Final Confirm | Admin only |
+| `cancelled` | Order cancelled by the Shop or Hub | Admin only |
 
 ### 7.2 State Transition Diagram
 
@@ -575,23 +575,14 @@ CREATE POLICY "admin_read_all_receipts" ON receipts
         │
         │ [Specialist taps "Approve & Quote"]
         ▼
-  specialist_approved ── [Shop cancels] ───────────────────────► cancelled
+  specialist_approved ── [Shop or Hub cancels] ─────────────────► cancelled
         │
-        │ [Shop taps "Final Confirm"]
-        ▼
-  shop_confirmed ─────────────────────────────────────────────────────┐
-        │                                                              │
-        │ [Specialist updates state]                          (simultaneously
-        ▼                                                     pushed to Courier)
-  in_progress
-        │
-        │ [Specialist taps "Packaged"]
-        ▼
-    packaged
-        │
-        │ [Specialist taps "Ready for Courier"]
+        │ [Specialist taps "Ready for delivery"] — approval is final, no Shop re-confirm;
+        │ order is appended to the Courier manifest here
         ▼
   ready_for_courier
+        │
+        │  (legacy rows may pass through in_progress → packaged before this point)
         │
         │ [Courier picks up + confirms pickup in app]
         ▼
@@ -606,8 +597,8 @@ CREATE POLICY "admin_read_all_receipts" ON receipts
 
 Any transition not listed in 7.2 is explicitly forbidden. The backend must reject these at the Edge Function level, not just the UI.
 
-- `pending_request` → `in_progress` (bypasses the handshake — never allowed)
-- `shop_confirmed` → `pending_request` (no rollbacks after both approvals)
+- `pending_request` → `in_progress`/`ready_for_courier` (bypasses Specialist approval — never allowed)
+- `specialist_approved` → `pending_request` (no rollback after approval)
 - `delivered` → any state (terminal state — immutable)
 - `rejected` → any state (terminal state — open a new Request)
 - `cancelled` → any state (terminal state — open a new Request)
@@ -621,8 +612,10 @@ All status mutations must go through the `/order-state-change` Edge Function. Ne
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   pending_request:     ['specialist_approved', 'rejected'],
-  specialist_approved: ['shop_confirmed', 'cancelled'],
-  shop_confirmed:      ['in_progress'],
+  // Specialist approval is final; they then mark the order ready for the courier.
+  // in_progress/packaged are retained for legacy rows only, not the live path.
+  specialist_approved: ['ready_for_courier', 'in_progress', 'cancelled'],
+  shop_confirmed:      ['ready_for_courier', 'in_progress'], // legacy enum value — unreachable
   in_progress:         ['packaged'],
   packaged:            ['ready_for_courier'],
   ready_for_courier:   ['in_transit'],
@@ -637,12 +630,16 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 // 2. Timestamp the relevant *_at column
 // 3. Trigger the correct FCM push notifications (see Section 13)
 // 4. On 'delivered': call the receipt generation function
-// 5. On 'shop_confirmed': simultaneously push to Courier queue
+// 5. On 'ready_for_courier': push to the Courier queue / manifest
 ```
 
 ---
 
-## 8. Two-Way Handshake — Full Technical Flow
+## 8. Order Flow — Full Technical Flow
+
+> **Updated 2026-06-13:** the original design required a Shop "Final Confirm" (`shop_confirmed`) after
+> Specialist approval. That step was removed — **Specialist approval is final**, after which the specialist
+> marks the order ready for the courier. `shop_confirmed` is retained as a legacy enum value only.
 
 ### 8.1 Step-by-Step with System Actions
 
@@ -667,24 +664,19 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   3. Transition `status` → `specialist_approved`, set `specialist_approved_at`
   4. Send FCM push notification back to the originating Shop
 
-**Step 3 — Shop Final Confirm**
-- Actor: The same `foh_manager` or `kitchen_manager` who submitted
-- UI: "Awaiting Confirmation" screen → review → "Final Confirm"
-- System actions:
-  1. Transition `status` → `shop_confirmed`, set `shop_confirmed_at`
-  2. **Simultaneously trigger two actions:**
-     - Move order into Specialist's To-Do Board (Specialist's UI query filter changes)
-     - Append order to the active Courier manifest for the target delivery date
-  3. Send FCM push notification to Specialist (new item on board)
-  4. Send FCM push notification to Courier (new delivery queued)
-
-**Step 4 — Production (Specialist Updates State)**
+**Step 3 — Specialist Marks Ready (Production)**
 - Actor: `meat_specialist`, `bread_baker`, or `pastry_chef`
-- UI: To-Do Board → tap order → update state chips
-- States: `in_progress` → `packaged` → `ready_for_courier`
-- On `ready_for_courier`: FCM to Courier
+- UI: To-Do Board → tap order → "Ready for delivery"
+- System actions:
+  1. Specialist approval (Step 2) is final — there is **no separate Shop "Final Confirm"** step. The
+     specialist advances the order straight to `ready_for_courier`.
+  2. Transition `status` → `ready_for_courier`, set `ready_at`, and append the order to the active Courier
+     manifest for the target delivery date.
+  3. Send FCM push notification to the Courier (new delivery queued).
+- Legacy: the `in_progress` → `packaged` → `ready_for_courier` sub-states remain valid for old rows but are
+  not part of the current production path.
 
-**Step 5 — Delivery Sign-off**
+**Step 4 — Delivery Sign-off**
 - Actor: `courier` initiates; `foh_manager` or `kitchen_manager` completes
 - UI: Courier taps "Delivered" → Shop sees sign-off screen → taps "Received & Confirmed"
 - System actions:
@@ -816,7 +808,7 @@ The date picker in the cart must enforce these rules before the user can select 
 - Countdown timer banner (always visible, persistent)
 - List of today's active orders and their current statuses
 - Quick-access buttons: "New Request" and "My Templates"
-- Badge notification on any order requiring Shop action (e.g., awaiting Final Confirm)
+- Badge notification on any order requiring Shop action (e.g., delivery sign-off)
 
 **B. Catalog / New Request**
 - Browse by Category → Product → Modifiers (mandatory modifiers block progression)
@@ -954,9 +946,8 @@ All push notifications go through Firebase Cloud Messaging. FCM tokens are store
 | Event | Trigger | Recipient | Message |
 |---|---|---|---|
 | New request submitted | `status = pending_request` | Assigned Specialist | *"New [category] request from [Shop Name] for [delivery date]"* |
-| Specialist approved | `status = specialist_approved` | Originating Shop Manager | *"Your request has been approved. Tap to Final Confirm."* |
+| Specialist approved | `status = specialist_approved` | Originating Shop Manager | *"Your request has been approved — now queued for delivery."* |
 | Specialist rejected | `status = rejected` | Originating Shop Manager | *"Your [item] request was rejected: [reason]"* |
-| Final Confirm complete | `status = shop_confirmed` | Specialist + Courier | *"Order confirmed — added to your board / manifest."* |
 | Order ready for courier | `status = ready_for_courier` | Courier | *"[N] items from [Shop Name] are packaged and ready."* |
 | Courier in transit | `status = in_transit` | Shop Manager | *"Your delivery is on the way — ETA [time]."* |
 | Delivery sign-off needed | Courier arrives at stop | Shop Manager | *"[Courier name] has arrived. Please confirm receipt in the app."* |
@@ -968,7 +959,7 @@ All push notifications go through Firebase Cloud Messaging. FCM tokens are store
 
 ## 14. Offline Mode Strategy
 
-**Decision (resolved):** Read-only cache. Shops cannot submit new Requests or Final Confirm while offline. They can view their order history and confirmed order status.
+**Decision (resolved):** Read-only cache. Shops cannot submit new Requests while offline. They can view their order history and current order status.
 
 **Implementation (Drift / SQLite):**
 
@@ -1054,7 +1045,7 @@ fix/{name}      ← bug fix branches
 **PR Rules:**
 - Every PR must target `dev` (unless it's a hotfix targeting `staging`)
 - PRs require 1 reviewer approval
-- PR description must reference the spec section it implements (e.g., *"Implements Section 8 — Two-Way Handshake"*)
+- PR description must reference the spec section it implements (e.g., *"Implements Section 8 — Order Flow"*)
 - If the PR changes any system behaviour described in `PROJECT_SPEC.md`, the spec must be updated in the same PR
 
 ### 17.2 Environment Variables Template
@@ -1140,14 +1131,14 @@ After 6–12 months of data:
 |---|---|
 | **Shop** | One of the 7 satellite café locations that submit supply requests |
 | **Hub** | The central production facility that fulfils orders |
-| **Request** | A shop's unconfirmed submission, before both approvals are complete |
-| **Order** | A confirmed supply transaction, after Final Confirm |
-| **Two-Way Handshake** | The mandatory dual-approval flow (Specialist → Shop) before an order becomes active |
+| **Request** | A shop's submission awaiting Specialist approval |
+| **Order** | A supply transaction once the Specialist has approved it |
+| **Two-Way Handshake** | *Deprecated (2026-06-13).* Original Specialist→Shop dual-approval flow; the Shop "Final Confirm" step was removed — Specialist approval is now final. See §8 |
 | **86** | Industry term for "out of stock." The 86 toggle removes a product from all Shop catalogs instantly |
 | **Manifest** | The Courier's compiled list of delivery stops for a given day |
 | **Lead Time** | The minimum number of hours between order submission and a valid delivery date for a given product |
 | **Cut-off** | The daily deadline (default 4:00 PM) after which new requests cannot target the following day |
-| **Final Confirm** | The Shop's second-stage approval that locks the order and triggers simultaneous routing |
+| **Final Confirm** | *Removed (2026-06-13).* Was the Shop's second-stage approval; the flow now treats Specialist approval as final |
 | **To-Do Board** | The Specialist's production dashboard showing all confirmed, in-flight orders |
 | **Inbox** | The Specialist's staging area showing pending requests awaiting their Approval 1 |
 | **RLS** | Row-Level Security — PostgreSQL's mechanism for filtering rows at the database level per user |
