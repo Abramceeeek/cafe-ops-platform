@@ -29,23 +29,16 @@ jobs:
       - name: Generate iOS platform files
         working-directory: apps/${{ matrix.app }}
         run: flutter create --platforms=ios --org com.hubsync .
-      - name: Configure iOS (bundle id, iOS 13, Firebase modular-header fix)
+      - name: Configure iOS (bundle id + deployment target)
         working-directory: apps/${{ matrix.app }}
         run: |
           SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
           NEW="com.hubsync.${SHORT}"
           echo "Setting bundle id -> $NEW"
           sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${NEW};/g" ios/Runner.xcodeproj/project.pbxproj
-          # Firebase pods need iOS 13+ (flutter create comments the platform line out).
-          sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile || true
-          grep -q "platform :ios" ios/Podfile || printf "platform :ios, '13.0'\n%s" "$(cat ios/Podfile)" > ios/Podfile
-          # Fix the firebase_messaging non-modular Firebase.h error two ways:
-          # (a) build all pods as clang modules, (b) allow non-modular includes.
-          perl -0pi -e "s/(target 'Runner' do)/\$1\n  use_frameworks! :linkage => :static\n  use_modular_headers!/" ios/Podfile
-          perl -0pi -e 's/(flutter_additional_ios_build_settings\(target\))/$1\n    target.build_configurations.each do |bc|\n      bc.build_settings["CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES"] = "YES"\n    end/' ios/Podfile
-          echo "=== Podfile target ==="; sed -n "/target 'Runner'/,/^end/p" ios/Podfile | head -6
-          echo "=== Podfile platform ==="; grep "platform :ios" ios/Podfile
-          echo "=== Podfile post_install ==="; sed -n '/post_install/,/^end/p' ios/Podfile
+          # Firebase 15.x iOS pods need iOS 13+; uncomment the platform line in place.
+          sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile
+          echo "=== Podfile head ==="; head -25 ios/Podfile
       - name: Build iOS (unsigned — verifies the code compiles)
         working-directory: apps/${{ matrix.app }}
         run: |
