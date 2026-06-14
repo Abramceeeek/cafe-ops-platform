@@ -40,6 +40,48 @@ final approvedOrdersProvider = FutureProvider<List<PendingOrder>>((ref) async {
   return out;
 });
 
+/// All of one shop's approved orders for a single delivery day, merged into one
+/// card. Orders are split per category/submission, so a shop can have several;
+/// the specialist sees and acts on them as one delivery for that shop+day.
+class _SchedGroup {
+  final String shopName;
+  final String deliveryDate;
+  bool isEmergency = false;
+  final List<String> orderIds = [];
+  final Map<String, PendingItem> _merged = {};
+
+  _SchedGroup(this.shopName, this.deliveryDate);
+
+  String get key => '$deliveryDate|$shopName';
+  List<PendingItem> get items => _merged.values.toList();
+
+  void add(PendingOrder o) {
+    orderIds.add(o.id);
+    if (o.isEmergency) isEmergency = true;
+    for (final it in o.items) {
+      final k = '${it.name}|${it.unit}';
+      final ex = _merged[k];
+      _merged[k] = ex == null
+          ? PendingItem(it.id, it.name, it.qty, it.unit)
+          : PendingItem(ex.id, ex.name, ex.qty + it.qty, ex.unit);
+    }
+  }
+}
+
+List<_SchedGroup> _groupByShopDay(List<PendingOrder> list) {
+  final groups = <String, _SchedGroup>{};
+  for (final o in list) {
+    final key = '${o.deliveryDate}|${o.shopName}';
+    (groups[key] ??= _SchedGroup(o.shopName, o.deliveryDate)).add(o);
+  }
+  final out = groups.values.toList()
+    ..sort((a, b) {
+      final byDate = a.deliveryDate.compareTo(b.deliveryDate);
+      return byDate != 0 ? byDate : a.shopName.compareTo(b.shopName);
+    });
+  return out;
+}
+
 class ScheduleScreen extends ConsumerStatefulWidget {
   const ScheduleScreen({super.key});
   @override
@@ -47,22 +89,24 @@ class ScheduleScreen extends ConsumerStatefulWidget {
 }
 
 class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
-  String? _busyId;
+  String? _busyKey;
 
-  Future<void> _markReady(PendingOrder o) async {
-    setState(() => _busyId = o.id);
+  Future<void> _markReady(_SchedGroup g) async {
+    setState(() => _busyKey = g.key);
     try {
-      await ref.read(supabaseProvider).rpc('change_order_status', params: {
-        'p_order_id': o.id,
-        'p_to': 'ready_for_courier',
-      });
+      for (final id in g.orderIds) {
+        await ref.read(supabaseProvider).rpc('change_order_status', params: {
+          'p_order_id': id,
+          'p_to': 'ready_for_courier',
+        });
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ready for delivery')));
       ref.invalidate(approvedOrdersProvider);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
     } finally {
-      if (mounted) setState(() => _busyId = null);
+      if (mounted) setState(() => _busyKey = null);
     }
   }
 
@@ -91,15 +135,15 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
             icon: const Icon(Icons.print_outlined),
             tooltip: 'Print sheet',
             onPressed: () {
-              final list = ref.read(approvedOrdersProvider).value ?? [];
+              final groups = _groupByShopDay(ref.read(approvedOrdersProvider).value ?? []);
               printSheet(
                 heading: 'Production / Delivery Sheet',
                 subtitle: 'Approved orders waiting to go out',
-                blocks: list
-                    .map((o) => PrintBlock(
-                          title: o.shopName,
-                          meta: 'for ${o.deliveryDate}${o.isEmergency ? ' · EMERGENCY' : ''}',
-                          lines: o.items.map((it) => PrintLine(it.name, '${it.qty} ${it.unit}')).toList(),
+                blocks: groups
+                    .map((g) => PrintBlock(
+                          title: g.shopName,
+                          meta: 'for ${g.deliveryDate}${g.isEmergency ? ' · EMERGENCY' : ''}',
+                          lines: g.items.map((it) => PrintLine(it.name, '${it.qty} ${it.unit}')).toList(),
                         ))
                     .toList(),
               );
@@ -113,15 +157,16 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
         error: (e, _) => Center(child: Text('Failed to load:\n$e', textAlign: TextAlign.center)),
         data: (list) {
           if (list.isEmpty) return const Center(child: Text('Nothing approved waiting to go out.'));
+          final groups = _groupByShopDay(list);
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(approvedOrdersProvider),
             child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              itemCount: list.length,
+              itemCount: groups.length,
               itemBuilder: (_, i) {
-                final o = list[i];
-                final busy = _busyId == o.id;
-                final dl = _deadline(o.deliveryDate);
+                final g = groups[i];
+                final busy = _busyKey == g.key;
+                final dl = _deadline(g.deliveryDate);
                 final overdue = dl == 'overdue';
                 final tonight = dl == 'tonight';
                 return Card(
@@ -152,33 +197,55 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(o.shopName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            Text('for ${o.deliveryDate}', style: const TextStyle(fontSize: 12)),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(g.shopName,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                      ),
+                                      if (g.isEmergency)
+                                        const Padding(
+                                          padding: EdgeInsets.only(left: 6),
+                                          child: Text('EMERGENCY',
+                                              style: TextStyle(
+                                                  color: Colors.red, fontSize: 10.5, fontWeight: FontWeight.bold)),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Text('for ${g.deliveryDate}', style: const TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                            if (g.orderIds.length > 1)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text('${g.orderIds.length} orders combined',
+                                    style: const TextStyle(fontSize: 11.5, color: Colors.grey)),
+                              ),
+                            const SizedBox(height: 8),
+                            ...g.items.map((it) => Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [Expanded(child: Text(it.name)), Text('${it.qty} ${it.unit}')],
+                                  ),
+                                )),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                icon: const Icon(Icons.local_shipping_outlined, size: 18),
+                                label: Text(busy ? '…' : 'Mark ready for delivery'),
+                                onPressed: busy ? null : () => _markReady(g),
+                              ),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        ...o.items.map((it) => Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [Expanded(child: Text(it.name)), Text('${it.qty} ${it.unit}')],
-                              ),
-                            )),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            icon: const Icon(Icons.local_shipping_outlined, size: 18),
-                            label: Text(busy ? '…' : 'Mark ready for delivery'),
-                            onPressed: busy ? null : () => _markReady(o),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                      ),
                     ],
                   ),
                 );

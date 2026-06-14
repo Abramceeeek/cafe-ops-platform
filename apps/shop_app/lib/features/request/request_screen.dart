@@ -28,7 +28,8 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
   DateTime _earliest(num maxLead) {
     final nowUtc = DateTime.now().toUtc();
     final cutoffPassed = _londonHour(nowUtc) >= 16;
-    final leadDays = (maxLead / 24).ceil().clamp(1, 365);
+    // 48h floor: earliest is the day-after-tomorrow; +1 more past the 16:00 cut-off.
+    final leadDays = (maxLead / 24).ceil().clamp(2, 365);
     return DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day)
         .add(Duration(days: leadDays + (cutoffPassed ? 1 : 0)));
   }

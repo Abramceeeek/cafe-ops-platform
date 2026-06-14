@@ -64,6 +64,68 @@ final routeOrdersProvider = FutureProvider<List<RouteOrder>>((ref) async {
   }).toList();
 });
 
+/// One shop's deliveries for a single day, merged into one stop. A shop can have
+/// several orders (split per category/submission) in mixed states; the courier
+/// acts on the whole stop — "Start delivery" moves the ready ones out, "Confirm
+/// delivered" closes the in-transit ones, and anything still in production waits.
+class _ShopGroup {
+  final String shopName;
+  final String? address;
+  final String deliveryDate;
+  final List<String> readyIds = [];
+  final List<String> inTransitIds = [];
+  final List<String> productionIds = []; // specialist_approved / in_progress / packaged
+  final List<String> deliveredIds = [];
+  final Map<String, RouteItem> _merged = {};
+
+  _ShopGroup(this.shopName, this.address, this.deliveryDate);
+
+  String get key => '$deliveryDate|$shopName';
+  List<RouteItem> get items => _merged.values.toList();
+  bool get hasUndelivered =>
+      readyIds.isNotEmpty || inTransitIds.isNotEmpty || productionIds.isNotEmpty;
+  bool get allDelivered => !hasUndelivered && deliveredIds.isNotEmpty;
+
+  void add(RouteOrder o) {
+    switch (o.status) {
+      case 'ready_for_courier':
+        readyIds.add(o.id);
+        break;
+      case 'in_transit':
+        inTransitIds.add(o.id);
+        break;
+      case 'delivered':
+        deliveredIds.add(o.id);
+        break;
+      default: // specialist_approved / in_progress / packaged
+        productionIds.add(o.id);
+    }
+    for (final it in o.items) {
+      final k = '${it.name}|${it.unit}';
+      final ex = _merged[k];
+      _merged[k] = ex == null ? RouteItem(it.name, it.qty, it.unit) : RouteItem(ex.name, ex.qty + it.qty, ex.unit);
+    }
+  }
+
+  String get statusSummary {
+    final parts = <String>[];
+    if (inTransitIds.isNotEmpty) parts.add('${inTransitIds.length} in transit');
+    if (readyIds.isNotEmpty) parts.add('${readyIds.length} ready');
+    if (productionIds.isNotEmpty) parts.add('${productionIds.length} in production');
+    if (deliveredIds.isNotEmpty) parts.add('${deliveredIds.length} delivered');
+    return parts.join(' · ');
+  }
+}
+
+List<_ShopGroup> _groupByDayShop(List<RouteOrder> list) {
+  final groups = <String, _ShopGroup>{};
+  for (final o in list) {
+    final key = '${o.deliveryDate}|${o.shopName}';
+    (groups[key] ??= _ShopGroup(o.shopName, o.address, o.deliveryDate)).add(o);
+  }
+  return groups.values.toList();
+}
+
 class CourierRouteScreen extends ConsumerStatefulWidget {
   const CourierRouteScreen({super.key});
   @override
@@ -71,39 +133,24 @@ class CourierRouteScreen extends ConsumerStatefulWidget {
 }
 
 class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
-  String? _busyId;
+  String? _busyKey;
 
-  String _statusLabel(String s) {
-    switch (s) {
-      case 'in_transit':
-        return 'In transit';
-      case 'ready_for_courier':
-        return 'Ready';
-      case 'delivered':
-        return 'Delivered';
-      case 'packaged':
-        return 'Packaged';
-      case 'in_progress':
-        return 'In production';
-      default:
-        return 'Approved';
-    }
-  }
-
-  Future<void> _advance(RouteOrder o, String to, String okMsg) async {
-    setState(() => _busyId = o.id);
+  Future<void> _advance(_ShopGroup g, List<String> ids, String to, String okMsg) async {
+    setState(() => _busyKey = g.key);
     try {
-      await ref.read(supabaseProvider).rpc('change_order_status', params: {
-        'p_order_id': o.id,
-        'p_to': to,
-      });
+      for (final id in ids) {
+        await ref.read(supabaseProvider).rpc('change_order_status', params: {
+          'p_order_id': id,
+          'p_to': to,
+        });
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(okMsg)));
       ref.invalidate(routeOrdersProvider);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
     } finally {
-      if (mounted) setState(() => _busyId = null);
+      if (mounted) setState(() => _busyKey = null);
     }
   }
 
@@ -123,28 +170,33 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
     return '${_wd[d.weekday - 1]} ${d.day} ${_mo[d.month - 1]}';
   }
 
-  /// Group deliveries by day — Overdue, Today, Tomorrow, then dated — like the web manifest.
+  /// Group deliveries by day (Overdue, Today, Tomorrow, then dated), then by shop
+  /// within each day — one card per shop stop, like the web manifest.
   List<Widget> _buildSections(List<RouteOrder> list) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final todayStr = _ymd(today);
-    final overdue = <RouteOrder>[];
-    final byDate = <String, List<RouteOrder>>{};
-    for (final o in list) {
-      if (o.deliveryDate.compareTo(todayStr) < 0 && o.status != 'delivered') {
-        overdue.add(o);
+    final overdue = <_ShopGroup>[];
+    final byDate = <String, List<_ShopGroup>>{};
+    for (final g in _groupByDayShop(list)) {
+      if (g.deliveryDate.compareTo(todayStr) < 0 && g.hasUndelivered) {
+        overdue.add(g);
       } else {
-        (byDate[o.deliveryDate] ??= <RouteOrder>[]).add(o);
+        (byDate[g.deliveryDate] ??= <_ShopGroup>[]).add(g);
       }
     }
     final dates = byDate.keys.toList()..sort();
     final out = <Widget>[];
     if (overdue.isNotEmpty) {
+      overdue.sort((a, b) {
+        final byDateCmp = a.deliveryDate.compareTo(b.deliveryDate);
+        return byDateCmp != 0 ? byDateCmp : a.shopName.compareTo(b.shopName);
+      });
       out.add(_sectionHeader('Overdue', overdue.length, overdue: true));
       out.addAll(overdue.map(_card));
     }
     for (final ds in dates) {
-      final group = byDate[ds]!;
+      final group = byDate[ds]!..sort((a, b) => a.shopName.compareTo(b.shopName));
       out.add(_sectionHeader(_dayLabel(ds, today), group.length));
       out.addAll(group.map(_card));
     }
@@ -167,10 +219,10 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
     );
   }
 
-  Widget _card(RouteOrder o) {
-    final busy = _busyId == o.id;
-    final inTransit = o.status == 'in_transit';
-    final canStart = o.status == 'ready_for_courier';
+  Widget _card(_ShopGroup g) {
+    final busy = _busyKey == g.key;
+    final canStart = g.readyIds.isNotEmpty;
+    final canDeliver = g.inTransitIds.isNotEmpty;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -180,17 +232,19 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(o.shopName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text(_statusLabel(o.status), style: const TextStyle(fontSize: 12)),
+                Expanded(
+                  child: Text(g.shopName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+                Text(g.statusSummary, style: const TextStyle(fontSize: 12)),
               ],
             ),
-            if (o.address != null)
+            if (g.address != null)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Text(o.address!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                child: Text(g.address!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
               ),
             const SizedBox(height: 8),
-            ...o.items.map((it) => Padding(
+            ...g.items.map((it) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 2),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -198,30 +252,33 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
                   ),
                 )),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: inTransit
-                  ? FilledButton.icon(
-                      icon: const Icon(Icons.check, size: 18),
-                      label: Text(busy ? '…' : 'Confirm delivered'),
-                      onPressed: busy ? null : () => _advance(o, 'delivered', 'Delivered'),
-                    )
-                  : canStart
-                      ? FilledButton.icon(
-                          icon: const Icon(Icons.local_shipping, size: 18),
-                          label: Text(busy ? '…' : 'Start delivery'),
-                          onPressed: busy ? null : () => _advance(o, 'in_transit', 'Delivery started'),
-                        )
-                      : Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            o.status == 'delivered'
-                                ? 'Delivered'
-                                : 'Scheduled — waiting for the hub to mark it ready',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                        ),
-            ),
+            if (canDeliver)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.check, size: 18),
+                  label: Text(busy ? '…' : 'Confirm delivered'),
+                  onPressed: busy ? null : () => _advance(g, g.inTransitIds, 'delivered', 'Delivered'),
+                ),
+              ),
+            if (canDeliver && canStart) const SizedBox(height: 8),
+            if (canStart)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.local_shipping, size: 18),
+                  label: Text(busy ? '…' : 'Start delivery'),
+                  onPressed: busy ? null : () => _advance(g, g.readyIds, 'in_transit', 'Delivery started'),
+                ),
+              ),
+            if (!canDeliver && !canStart)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  g.allDelivered ? 'Delivered' : 'Scheduled — waiting for the hub to mark it ready',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
           ],
         ),
       ),
@@ -239,16 +296,16 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
             icon: const Icon(Icons.print_outlined),
             tooltip: 'Print route',
             onPressed: () {
-              final list = ref.read(routeOrdersProvider).value ?? [];
+              final groups = _groupByDayShop(ref.read(routeOrdersProvider).value ?? []);
               printSheet(
                 heading: 'Delivery Route',
-                subtitle: 'Ready & out-for-delivery',
-                blocks: list
-                    .map((o) => PrintBlock(
-                          title: o.shopName,
-                          meta: '${o.status == 'in_transit' ? 'In transit' : 'Ready'} · for ${o.deliveryDate}',
-                          address: o.address,
-                          lines: o.items.map((it) => PrintLine(it.name, '${it.qty} ${it.unit}')).toList(),
+                subtitle: 'Ready & out-for-delivery, grouped by shop',
+                blocks: groups
+                    .map((g) => PrintBlock(
+                          title: g.shopName,
+                          meta: '${g.statusSummary} · for ${g.deliveryDate}',
+                          address: g.address,
+                          lines: g.items.map((it) => PrintLine(it.name, '${it.qty} ${it.unit}')).toList(),
                         ))
                     .toList(),
               );

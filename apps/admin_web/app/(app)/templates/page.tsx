@@ -1,22 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Trash2, Clock, Send, Plus, ListChecks, TriangleAlert } from "lucide-react";
+import { Trash2, Plus, ListChecks, TriangleAlert, Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { submitOrder } from "@/app/actions/orders";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 interface TemplateModifier {
   modifier_option_id: string;
@@ -42,48 +31,29 @@ interface Template {
   order_template_items: TemplateItem[];
 }
 
-import { earliestDate } from "@/lib/utils";
-
 export default function TemplatesPage() {
+  const router = useRouter();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
-  const [shopId, setShopId] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [serverNow, setServerNow] = useState<Date>(new Date());
-
-  const [active, setActive] = useState<Template | null>(null);
-  const [deliveryDate, setDeliveryDate] = useState("");
-  const [ordering, setOrdering] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    const [{ data }, profileRes, timeRes] = await Promise.all([
-      supabase
-        .from("order_templates")
-        .select(
-          `id, name,
-           order_template_items (
-             id, quantity, custom_note,
-             products ( id, name, unit, category_id, lead_time_hours, product_categories ( name ) ),
-             order_template_item_modifiers (
-               modifier_option_id,
-               modifier_options ( name, modifier_groups ( name ) )
-             )
-           )`,
-        )
-        .order("created_at", { ascending: false }),
-      user ? supabase.from("profiles").select("shop_id").eq("id", user.id).single() : Promise.resolve({ data: null }),
-      supabase.functions.invoke("get-server-time"),
-    ]);
+    const { data } = await supabase
+      .from("order_templates")
+      .select(
+        `id, name,
+         order_template_items (
+           id, quantity, custom_note,
+           products ( id, name, unit, category_id, lead_time_hours, product_categories ( name ) ),
+           order_template_item_modifiers (
+             modifier_option_id,
+             modifier_options ( name, modifier_groups ( name ) )
+           )
+         )`,
+      )
+      .order("created_at", { ascending: false });
     setTemplates((data ?? []) as unknown as Template[]);
-    setUserId(user?.id ?? null);
-    setShopId((profileRes.data as { shop_id: string } | null)?.shop_id ?? null);
-    const now = (timeRes.data as { now?: string } | null)?.now;
-    if (now) setServerNow(new Date(now));
     setLoading(false);
   }, []);
 
@@ -103,19 +73,25 @@ export default function TemplatesPage() {
     return { count: t.order_template_items.length, cats, unavailable };
   };
 
-  const activeMaxLead = useMemo(
-    () =>
-      (active?.order_template_items ?? []).reduce(
-        (m, i) => Math.max(m, i.products?.lead_time_hours ?? 0),
-        0,
-      ),
-    [active],
-  );
-  const minDate = earliestDate(serverNow, activeMaxLead);
-
-  function openOrder(t: Template) {
-    setActive(t);
-    setDeliveryDate("");
+  // Load the template's available items into the New Request cart so the user can
+  // edit quantities / items and pick the delivery date before submitting.
+  function editInRequest(t: Template) {
+    const available = t.order_template_items.filter((i) => i.products);
+    if (available.length === 0) return toast.error("All items in this template are unavailable.");
+    const seed = available.map((i) => ({
+      product_id: i.products!.id,
+      quantity: i.quantity,
+      note: i.custom_note ?? "",
+      modifier_option_ids: i.order_template_item_modifiers.map((m) => m.modifier_option_id),
+    }));
+    try {
+      sessionStorage.setItem("request_seed", JSON.stringify(seed));
+    } catch {
+      return toast.error("Couldn't open the request — please try again.");
+    }
+    const skipped = t.order_template_items.length - available.length;
+    if (skipped > 0) toast.info(`${skipped} unavailable item(s) skipped.`);
+    router.push("/request");
   }
 
   async function deleteTemplate(id: string) {
@@ -124,39 +100,6 @@ export default function TemplatesPage() {
     if (error) return toast.error(error.message);
     toast.success("Template deleted.");
     await load();
-  }
-
-  async function orderNow() {
-    if (!active || !shopId || !userId) return toast.error("Your profile has no shop assigned.");
-    if (!deliveryDate) return toast.error("Pick a delivery date.");
-    const available = active.order_template_items.filter((i) => i.products);
-    const excluded = active.order_template_items.length - available.length;
-    if (available.length === 0) return toast.error("All items in this template are unavailable.");
-
-    setOrdering(true);
-    const items = available.map((i) => ({
-      product_id: i.products!.id,
-      category_id: i.products!.category_id,
-      quantity: i.quantity,
-      lead_time_hours: i.products!.lead_time_hours,
-      unit: i.products!.unit,
-      custom_note: i.custom_note || undefined,
-      modifiers: i.order_template_item_modifiers.map((m) => ({
-        modifier_option_id: m.modifier_option_id,
-        modifier_group_name: m.modifier_options?.modifier_groups?.name ?? "",
-        modifier_option_name: m.modifier_options?.name ?? "",
-      })),
-    }));
-    const response = await submitOrder({ shop_id: shopId, requested_delivery_date: deliveryDate, items });
-    setOrdering(false);
-    if (response.error) {
-      const details = Array.isArray(response.details) ? ": " + response.details.join(", ") : (response.details ? ": " + response.details : "");
-      return toast.error(response.error + details);
-    }
-    if (excluded > 0) toast.warning(`${excluded} unavailable item(s) were excluded.`);
-    const ids = response.order_ids ?? [];
-    toast.success(`Request submitted — ${ids.length} order(s) created.`);
-    setActive(null);
   }
 
   return (
@@ -173,8 +116,9 @@ export default function TemplatesPage() {
       </div>
 
       <p className="px-0.5 text-[13px] leading-relaxed text-muted-foreground">
-        Saved carts for your role. <span className="font-semibold text-foreground/80">Order Now</span>{" "}
-        re-checks lead times &amp; the 4 PM cut-off, then submits.
+        Saved carts for your role.{" "}
+        <span className="font-semibold text-foreground/80">Edit in New Request</span> loads a template
+        into the cart so you can adjust it and pick the delivery date before submitting.
       </p>
 
       {loading && <p className="px-0.5 text-sm text-muted-foreground">Loading…</p>}
@@ -239,10 +183,10 @@ export default function TemplatesPage() {
 
             <div className="mt-3 flex gap-2.5">
               <button
-                onClick={() => openOrder(t)}
+                onClick={() => editInRequest(t)}
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:brightness-105"
               >
-                <Send className="h-4 w-4" /> Order Now
+                <Pencil className="h-4 w-4" /> Edit in New Request
               </button>
               <button
                 onClick={() => void deleteTemplate(t.id)}
@@ -264,39 +208,6 @@ export default function TemplatesPage() {
           <Plus className="h-[17px] w-[17px]" /> New template from a cart
         </Link>
       )}
-
-      <Dialog open={active != null} onOpenChange={(o) => !o && setActive(null)}>
-        <DialogContent>
-          {active && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Order &ldquo;{active.name}&rdquo;</DialogTitle>
-                <DialogDescription>
-                  Cut-off + lead time still apply. Unavailable items are excluded.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-2">
-                <Label htmlFor="tdate">Delivery date</Label>
-                <Input
-                  id="tdate"
-                  type="date"
-                  min={minDate}
-                  value={deliveryDate}
-                  onChange={(e) => setDeliveryDate(e.target.value)}
-                />
-                <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" /> Earliest: {minDate} (4:00 PM London cut-off)
-                </p>
-              </div>
-              <DialogFooter>
-                <Button disabled={ordering || !deliveryDate} onClick={orderNow}>
-                  {ordering ? "Submitting…" : "Submit Request"}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
