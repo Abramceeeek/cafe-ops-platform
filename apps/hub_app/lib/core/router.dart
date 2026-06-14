@@ -24,42 +24,51 @@ final _accountKey = GlobalKey<NavigatorState>();
 final routerProvider = Provider<GoRouter>((ref) {
   ref.watch(authStateProvider);
   final roleAsync = ref.watch(currentUserRoleProvider);
-  final isCourier = roleAsync.value == UserRole.courier;
+  final isCourier = roleAsync.valueOrNull == UserRole.courier;
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/',
     redirect: (context, state) {
       final user = ref.read(supabaseProvider).auth.currentUser;
-      final isLoggingIn = state.matchedLocation == '/login';
+      final loc = state.matchedLocation;
 
       if (user == null) {
-        return isLoggingIn ? null : '/login';
+        return loc == '/login' ? null : '/login';
       }
 
-      if (roleAsync is AsyncData) {
-        final role = roleAsync.value;
-        // Role Guard: Hub App allows specialists and couriers
-        final isHubRole = role == UserRole.meatSpecialist ||
-            role == UserRole.breadBaker ||
-            role == UserRole.pastryChef ||
-            role == UserRole.courier;
-
-        if (!isHubRole) {
-          // If unauthorized, we sign them out to prevent getting stuck
-          ref.read(supabaseProvider).auth.signOut();
-          return '/login';
-        }
-
-        if (isLoggingIn) return '/';
+      // Logged in, but the role hasn't settled yet. Wait on a splash instead of
+      // rendering a guessed role — otherwise a previous session's role (e.g. a
+      // courier who used this device) flashes/sticks while a baker signs in,
+      // because the role FutureProvider serves the old value during a refetch.
+      if (roleAsync is! AsyncData) {
+        return loc == '/loading' ? null : '/loading';
       }
 
+      final role = roleAsync.value;
+      // Role Guard: Hub App allows specialists and couriers.
+      final isHubRole = role == UserRole.meatSpecialist ||
+          role == UserRole.breadBaker ||
+          role == UserRole.pastryChef ||
+          role == UserRole.courier;
+
+      if (!isHubRole) {
+        // If unauthorized, sign them out to prevent getting stuck.
+        ref.read(supabaseProvider).auth.signOut();
+        return '/login';
+      }
+
+      if (loc == '/login' || loc == '/loading') return '/';
       return null;
     },
     routes: [
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/loading',
+        builder: (context, state) => const _RoleLoadingScreen(),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
@@ -79,6 +88,35 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// Shown while a logged-in user's role is being fetched, so we never render the
+/// wrong role's navigation. On error (e.g. profile fetch failed) it offers a way
+/// out rather than spinning forever.
+class _RoleLoadingScreen extends ConsumerWidget {
+  const _RoleLoadingScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final roleAsync = ref.watch(currentUserRoleProvider);
+    return Scaffold(
+      body: Center(
+        child: roleAsync is AsyncError
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("Couldn't load your account."),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => ref.read(supabaseProvider).auth.signOut(),
+                    child: const Text('Sign out'),
+                  ),
+                ],
+              )
+            : const CircularProgressIndicator(),
+      ),
+    );
+  }
+}
 
 List<StatefulShellBranch> _branches(bool isCourier) => [
       StatefulShellBranch(
