@@ -10,10 +10,14 @@ const envContent = fs.readFileSync(envPath, "utf8");
 
 const URL = envContent.match(/NEXT_PUBLIC_SUPABASE_URL=(.*)/)?.[1].trim();
 const ANON = envContent.match(/NEXT_PUBLIC_SUPABASE_ANON_KEY=(.*)/)?.[1].trim();
-const PW = "Hubsync123!";
+const PW = process.env.DEMO_PASSWORD;
 
 if (!URL || !ANON) {
   console.error("Missing Supabase credentials in .env.local");
+  process.exit(1);
+}
+if (!PW) {
+  console.error("Set DEMO_PASSWORD env var to run detailed-e2e.");
   process.exit(1);
 }
 
