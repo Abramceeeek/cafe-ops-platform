@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/supabase_provider.dart';
+import '../request/request_providers.dart';
 
 class TemplateItem {
   final String id;
@@ -28,8 +30,6 @@ class OrderTemplate {
   OrderTemplate({required this.id, required this.name, required this.items});
 
   int get unavailable => items.where((i) => !i.available).length;
-  num get maxLead =>
-      items.where((i) => i.available).fold<num>(0, (m, i) => i.leadTimeHours > m ? i.leadTimeHours : m);
 }
 
 /// Saved carts for this manager's role. Mirrors the web Templates page.
@@ -69,86 +69,40 @@ class TemplatesScreen extends ConsumerStatefulWidget {
 }
 
 class _TemplatesScreenState extends ConsumerState<TemplatesScreen> {
-  // London hour (BST late-Mar..late-Oct = UTC+1), mirroring the server + request screen.
-  int _londonHour(DateTime nowUtc) {
-    final y = nowUtc.year;
-    DateTime lastSunday(int month) {
-      var d = DateTime.utc(y, month + 1, 1).subtract(const Duration(days: 1));
-      return d.subtract(Duration(days: d.weekday % 7));
-    }
-    final bst = nowUtc.isAfter(lastSunday(3).add(const Duration(hours: 1))) &&
-        nowUtc.isBefore(lastSunday(10).add(const Duration(hours: 1)));
-    return (nowUtc.hour + (bst ? 1 : 0)) % 24;
-  }
-
-  DateTime _earliest(num maxLead) {
-    final nowUtc = DateTime.now().toUtc();
-    final cutoffPassed = _londonHour(nowUtc) >= 16;
-    final leadDays = (maxLead / 24).ceil().clamp(1, 365);
-    return DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day)
-        .add(Duration(days: leadDays + (cutoffPassed ? 1 : 0)));
-  }
-
-  String _fmt(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  Future<void> _orderNow(OrderTemplate t) async {
-    final available = t.items.where((i) => i.available).toList();
+  /// Load the template's available items into the New Request cart so the orderer
+  /// can edit quantities / add items / pick the date, then submit from there.
+  Future<void> _useInRequest(OrderTemplate t) async {
+    final available = t.items.where((i) => i.available && i.productId != null).toList();
     if (available.isEmpty) {
       _toast('All items in this template are unavailable.');
       return;
     }
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: today,
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 30)),
-    );
-    if (picked == null || !mounted) return;
-
-    final earliest = _earliest(t.maxLead);
-    final d = DateTime.utc(picked.year, picked.month, picked.day);
-    final emergency = d.isBefore(earliest);
-
-    if (emergency) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Emergency order'),
-          content: const Text(
-            "This is before the cut-off — an emergency order with a high chance of not being approved. "
-            "Re-check with the specialist before submitting.",
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Submit emergency order'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return;
-    }
-
+    final List<Product> products;
     try {
-      final res = await ref.read(supabaseProvider).rpc('submit_request', params: {
-        'p_requested_delivery_date': _fmt(picked),
-        'p_items': available.map((i) => {'product_id': i.productId, 'quantity': i.qty}).toList(),
-        'p_is_emergency': emergency,
-        'p_idempotency_key': null,
-      });
-      final data = res as Map<String, dynamic>?;
-      final n = (data?['order_ids'] as List?)?.length ?? 0;
-      final excluded = t.items.length - available.length;
-      var msg = emergency ? 'Emergency order submitted — $n order(s).' : 'Request submitted — $n order(s).';
-      if (excluded > 0) msg += ' $excluded unavailable item(s) excluded.';
-      _toast(msg);
+      products = await ref.read(catalogProvider.future);
     } catch (e) {
-      _toast('Submit failed: $e');
+      _toast('Could not load the catalog: $e');
+      return;
     }
+    final byId = {for (final p in products) p.id: p};
+    final notifier = ref.read(cartProvider.notifier);
+    notifier.clear();
+    var added = 0;
+    for (final it in available) {
+      final p = byId[it.productId];
+      if (p == null) continue; // not in the current catalog (86'd / RLS-hidden)
+      notifier.setLine(p, it.qty.toInt(), {}, null);
+      added++;
+    }
+    if (!mounted) return;
+    if (added == 0) {
+      notifier.clear();
+      _toast('None of these items are available to order right now.');
+      return;
+    }
+    final skipped = t.items.length - added;
+    _toast('Loaded "${t.name}"${skipped > 0 ? ' · $skipped item(s) skipped' : ''} — edit and submit.');
+    context.go('/request');
   }
 
   Future<void> _delete(OrderTemplate t) async {
@@ -256,9 +210,9 @@ class _TemplatesScreenState extends ConsumerState<TemplatesScreen> {
                           children: [
                             Expanded(
                               child: FilledButton.icon(
-                                icon: const Icon(Icons.send, size: 18),
-                                label: const Text('Order Now'),
-                                onPressed: () => _orderNow(t),
+                                icon: const Icon(Icons.edit_note, size: 18),
+                                label: const Text('Edit in New Request'),
+                                onPressed: () => _useInRequest(t),
                               ),
                             ),
                             const SizedBox(width: 8),

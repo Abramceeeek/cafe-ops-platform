@@ -56,7 +56,8 @@ function earliestDate(now: Date, maxLeadHours: number): string {
   );
   const cutoffPassed = londonHour >= 16;
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const leadDays = Math.max(1, Math.ceil(maxLeadHours / 24));
+  // 48h floor: earliest delivery is the day-after-tomorrow; +1 more past the 16:00 cut-off.
+  const leadDays = Math.max(2, Math.ceil(maxLeadHours / 24));
   const penalty = cutoffPassed ? 1 : 0;
   d.setUTCDate(d.getUTCDate() + leadDays + penalty);
   return d.toISOString().slice(0, 10);
@@ -116,6 +117,40 @@ export default function NewRequestPage() {
       if (now) setServerNow(new Date(now));
     })();
   }, []);
+
+  // Seed the cart from a template chosen on the Templates page ("Edit in New
+  // Request"). Runs once the catalog + modifier options have loaded.
+  useEffect(() => {
+    if (products.length === 0) return;
+    const raw = sessionStorage.getItem("request_seed");
+    if (!raw) return;
+    sessionStorage.removeItem("request_seed");
+    try {
+      const seed = JSON.parse(raw) as {
+        product_id: string;
+        quantity: number;
+        note: string;
+        modifier_option_ids: string[];
+      }[];
+      const lines: CartLine[] = [];
+      seed.forEach((s, idx) => {
+        const product = products.find((p) => p.id === s.product_id);
+        if (!product) return;
+        const selected: Record<string, string> = {};
+        for (const oid of s.modifier_option_ids) {
+          const opt = options.find((o) => o.id === oid);
+          if (opt) selected[opt.modifier_group_id] = oid;
+        }
+        lines.push({ key: `${product.id}-${idx}-seed`, product, selected, quantity: s.quantity, note: s.note ?? "" });
+      });
+      if (lines.length > 0) {
+        setCart(lines);
+        toast.success("Template loaded — edit and submit.");
+      }
+    } catch {
+      // ignore a malformed seed
+    }
+  }, [products, options]);
 
   const productGroups = (productId: string) => groups.filter((g) => g.product_id === productId);
   const groupOptions = (groupId: string) => options.filter((o) => o.modifier_group_id === groupId);
