@@ -66,7 +66,7 @@ interface MergedItem { name: string; unit: string; qty: number; catName: string 
 interface ShopGroup {
   shopName: string;
   items: MergedItem[];
-  readyableIds: string[]; // orders still to be handed to the courier
+  readyable: { id: string; status: string }[]; // orders still to be handed to the courier
   withCourier: boolean;
   allDelivered: boolean;
 }
@@ -137,11 +137,11 @@ export default function BoardPage() {
       const items = Array.from(merged.values()).sort(
         (a, b) => catRank(a.catName) - catRank(b.catName) || a.name.localeCompare(b.name),
       );
-      const readyableIds = orders.filter((o) => READYABLE.has(o.status)).map((o) => o.id);
+      const readyable = orders.filter((o) => READYABLE.has(o.status)).map((o) => ({ id: o.id, status: o.status }));
       out.push({
         shopName,
         items,
-        readyableIds,
+        readyable,
         withCourier: orders.some((o) => o.status === "ready_for_courier" || o.status === "in_transit"),
         allDelivered: orders.every((o) => o.status === "delivered"),
       });
@@ -152,8 +152,10 @@ export default function BoardPage() {
   async function markReady(g: ShopGroup) {
     setBusyShop(g.shopName);
     try {
-      for (const id of g.readyableIds) {
-        const res = await updateOrderStatus({ order_id: id, new_status: "ready_for_courier" });
+      for (const o of g.readyable) {
+        // specialist_approved/packaged → ready_for_courier; legacy in_progress → packaged.
+        const to = o.status === "in_progress" ? "packaged" : "ready_for_courier";
+        const res = await updateOrderStatus({ order_id: o.id, new_status: to });
         if (res.error) throw new Error(res.error + (res.details ? ": " + res.details : ""));
       }
       toast.success("Ready for delivery");
@@ -252,7 +254,7 @@ export default function BoardPage() {
                     })}
                   </div>
                   <div className="border-t border-border p-3">
-                    {g.readyableIds.length > 0 ? (
+                    {g.readyable.length > 0 ? (
                       <button
                         onClick={() => void markReady(g)}
                         disabled={busyShop === g.shopName}
