@@ -130,39 +130,36 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Future<void> _saveTemplate() async {
+  // Monday of next ISO week — when a new standing order takes effect.
+  String _nextMonday() {
+    final n = DateTime.now();
+    final today = DateTime(n.year, n.month, n.day);
+    return _fmt(today.add(Duration(days: 8 - today.weekday)));
+  }
+
+  // Save the current cart as a recurring standing order for a chosen weekday.
+  Future<void> _saveAsStanding() async {
     final cart = ref.read(cartProvider);
     if (cart.isEmpty) {
       _toast('Add items first.');
       return;
     }
-    final nameCtrl = TextEditingController();
-    final name = await showDialog<String>(
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final weekday = await showDialog<int>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Save as template'),
-        content: TextField(
-          controller: nameCtrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(hintText: 'Template name (e.g. Weekday order)'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()), child: const Text('Save')),
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Save as standing order'),
+        children: [
+          for (var i = 0; i < days.length; i++)
+            SimpleDialogOption(onPressed: () => Navigator.pop(ctx, i + 1), child: Text('Every ${days[i]}')),
         ],
       ),
     );
-    if (name == null || name.isEmpty) return;
+    if (weekday == null) return;
     try {
-      final sb = ref.read(supabaseProvider);
-      final uid = sb.auth.currentUser!.id;
-      final profile = await sb.from('profiles').select('shop_id, role').eq('id', uid).single();
-      await sb.rpc('save_order_template', params: {
-        'p_shop_id': profile['shop_id'],
-        'p_created_by': uid,
-        'p_name': name,
-        'p_role': profile['role'],
+      await ref.read(supabaseProvider).rpc('save_standing_order', params: {
+        'p_weekday': weekday,
+        'p_effective_from': _nextMonday(),
         'p_items': cart
             .map((l) => {
                   'product_id': l.product.id,
@@ -173,7 +170,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
                 })
             .toList(),
       });
-      _toast('Template "$name" saved.');
+      _toast('Saved as a standing order — starts next week.');
     } catch (e) {
       _toast('Save failed: $e');
     }
@@ -207,9 +204,9 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
         title: const Text('New Request'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.bookmark_add_outlined),
-            tooltip: 'Save as template',
-            onPressed: cart.isEmpty ? null : _saveTemplate,
+            icon: const Icon(Icons.event_repeat),
+            tooltip: 'Save as standing order',
+            onPressed: cart.isEmpty ? null : _saveAsStanding,
           ),
         ],
       ),

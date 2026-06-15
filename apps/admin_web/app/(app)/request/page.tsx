@@ -63,6 +63,24 @@ function earliestDate(now: Date, maxLeadHours: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+const WEEKDAY_OPTIONS = [
+  { n: 1, label: "Every Monday" },
+  { n: 2, label: "Every Tuesday" },
+  { n: 3, label: "Every Wednesday" },
+  { n: 4, label: "Every Thursday" },
+  { n: 5, label: "Every Friday" },
+  { n: 6, label: "Every Saturday" },
+  { n: 7, label: "Every Sunday" },
+];
+
+// Monday of next ISO week — when a new/edited standing order takes effect.
+function nextMondayISO(): string {
+  const d = new Date();
+  const isoDow = d.getDay() === 0 ? 7 : d.getDay(); // 1=Mon..7=Sun
+  d.setDate(d.getDate() + (8 - isoDow));
+  return d.toISOString().slice(0, 10);
+}
+
 export default function NewRequestPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -70,15 +88,14 @@ export default function NewRequestPage() {
   const [options, setOptions] = useState<Option[]>([]);
   const [shopId, setShopId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
   const [serverNow, setServerNow] = useState<Date>(new Date());
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [filterCat, setFilterCat] = useState<string | null>(null);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [templateName, setTemplateName] = useState("");
-  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [standingWeekday, setStandingWeekday] = useState("");
+  const [savingStanding, setSavingStanding] = useState(false);
 
   // add-to-cart dialog
   const [active, setActive] = useState<Product | null>(null);
@@ -102,7 +119,7 @@ export default function NewRequestPage() {
             .order("name"),
           supabase.from("modifier_groups").select("id,product_id,name,is_required").order("display_order"),
           supabase.from("modifier_options").select("id,modifier_group_id,name").order("display_order"),
-          user ? supabase.from("profiles").select("shop_id, role").eq("id", user.id).single() : Promise.resolve({ data: null }),
+          user ? supabase.from("profiles").select("shop_id").eq("id", user.id).single() : Promise.resolve({ data: null }),
           supabase.functions.invoke("get-server-time"),
         ]);
       setCategories(cats ?? []);
@@ -110,9 +127,8 @@ export default function NewRequestPage() {
       setGroups(grps ?? []);
       setOptions(opts ?? []);
       setUserId(user?.id ?? null);
-      const profile = profileRes.data as { shop_id: string; role: string } | null;
+      const profile = profileRes.data as { shop_id: string } | null;
       setShopId(profile?.shop_id ?? null);
-      setRole(profile?.role ?? null);
       const now = (timeRes.data as { now?: string } | null)?.now;
       if (now) setServerNow(new Date(now));
     })();
@@ -242,35 +258,27 @@ export default function NewRequestPage() {
     }
   }
 
-  async function saveTemplate() {
-    if (!shopId || !userId || !role) return toast.error("Your profile has no shop assigned.");
+  // Save the current cart as a recurring standing order for a weekday. Takes effect
+  // next week (the current week stays locked) — see the Standing Orders page.
+  async function saveStanding() {
     if (cart.length === 0) return toast.error("Cart is empty.");
-    const name = templateName.trim();
-    if (!name) return toast.error("Name the template.");
-    setSavingTemplate(true);
-    const supabase = createClient();
-    const itemsPayload = cart.map(l => ({
+    if (!standingWeekday) return toast.error("Pick a weekday.");
+    setSavingStanding(true);
+    const itemsPayload = cart.map((l) => ({
       product_id: l.product.id,
       quantity: l.quantity,
       custom_note: l.note || null,
-      modifiers: Object.values(l.selected).map(oid => ({ modifier_option_id: oid }))
+      modifiers: Object.values(l.selected).map((oid) => ({ modifier_option_id: oid })),
     }));
-
-    const { error: rpcErr } = await supabase.rpc("save_order_template", {
-      p_shop_id: shopId,
-      p_created_by: userId,
-      p_name: name,
-      p_role: role,
-      p_items: itemsPayload
+    const { error } = await createClient().rpc("save_standing_order", {
+      p_weekday: Number(standingWeekday),
+      p_effective_from: nextMondayISO(),
+      p_items: itemsPayload,
     });
-
-    if (rpcErr) {
-      setSavingTemplate(false);
-      return toast.error(rpcErr.message);
-    }
-    setSavingTemplate(false);
-    setTemplateName("");
-    toast.success(`Template "${name}" saved.`);
+    setSavingStanding(false);
+    if (error) return toast.error(error.message);
+    setStandingWeekday("");
+    toast.success("Saved as a standing order — starts next week.");
   }
 
   return (
@@ -494,22 +502,29 @@ export default function NewRequestPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Save as template */}
+      {/* Save as standing order */}
       {cart.length > 0 && (
         <div className="rounded-2xl border bg-card p-4">
-          <Label htmlFor="tmpl" className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            Save as template
+          <Label htmlFor="sodow" className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Save as standing order
           </Label>
+          <p className="mt-1 text-[12px] text-muted-foreground">
+            Repeats every chosen weekday, auto-sent to the Hub. Starts next week.
+          </p>
           <div className="mt-2 flex gap-2">
-            <Input
-              id="tmpl"
-              maxLength={50}
-              placeholder="e.g. Tuesday restock"
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value)}
-            />
-            <Button variant="outline" disabled={savingTemplate || !templateName.trim()} onClick={saveTemplate}>
-              {savingTemplate ? "Saving…" : "Save"}
+            <select
+              id="sodow"
+              value={standingWeekday}
+              onChange={(e) => setStandingWeekday(e.target.value)}
+              className="flex h-10 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Choose a day…</option>
+              {WEEKDAY_OPTIONS.map((w) => (
+                <option key={w.n} value={w.n}>{w.label}</option>
+              ))}
+            </select>
+            <Button variant="outline" disabled={savingStanding || !standingWeekday} onClick={saveStanding}>
+              {savingStanding ? "Saving…" : "Save"}
             </Button>
           </div>
         </div>

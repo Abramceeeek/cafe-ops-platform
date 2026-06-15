@@ -43,6 +43,13 @@ select cron.schedule('monthly-statement', '1 0 1 * *',
 -- function no-op when it isn't the right local time.
 select cron.schedule('cutoff-warning', '30 14 * * *',
   $$ select call_edge_function('cutoff-warning-cron'); $$);
+
+-- Standing orders — materialise the current ISO week's recurring orders daily.
+-- Pure DB (migration 0048): no Edge Function / Vault needed, call the RPC directly.
+-- Idempotent, so the exact time only needs to be early enough that today's order
+-- exists before production. 00:05 UTC is safe (well clear of the 16:00 cut-off).
+select cron.schedule('standing-orders-gen', '5 0 * * *',
+  $$ select public.generate_standing_orders(); $$);
 ```
 
 ## Verify (manual trigger, no schedule wait)

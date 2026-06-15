@@ -9,7 +9,7 @@ import {
   Home,
   ClipboardList,
   Plus,
-  Files,
+  CalendarRange,
   User,
   Inbox,
   CalendarDays,
@@ -31,7 +31,7 @@ const SHOP_TABS: Tab[] = [
   { href: "/", label: "Home", icon: Home },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/request", label: "", icon: Plus, fab: true },
-  { href: "/templates", label: "Templates", icon: Files },
+  { href: "/standing-orders", label: "Standing", icon: CalendarRange },
   { href: "/account", label: "Account", icon: User },
 ];
 

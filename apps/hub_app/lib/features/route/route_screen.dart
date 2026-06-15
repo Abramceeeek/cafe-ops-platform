@@ -8,7 +8,32 @@ class RouteItem {
   final String name;
   final num qty;
   final String unit;
-  RouteItem(this.name, this.qty, this.unit);
+  final String catName;
+  RouteItem(this.name, this.qty, this.unit, {this.catName = ''});
+}
+
+// Pastry first, then bread, then anything else (matches the schedule + web print).
+int _catRank(String name) {
+  final n = name.toLowerCase();
+  if (n.contains('pastry') || n.contains('retail')) return 0;
+  if (n.contains('bread')) return 1;
+  return 2;
+}
+
+// First line of each category group carries a sub-header.
+List<PrintLine> _routeLines(List<RouteItem> items) {
+  final sorted = [...items]..sort((a, b) {
+      final r = _catRank(a.catName).compareTo(_catRank(b.catName));
+      return r != 0 ? r : a.name.compareTo(b.name);
+    });
+  var last = -1;
+  final out = <PrintLine>[];
+  for (final it in sorted) {
+    final r = _catRank(it.catName);
+    out.add(PrintLine(it.name, '${it.qty} ${it.unit}', subhead: r != last ? it.catName : null));
+    last = r;
+  }
+  return out;
 }
 
 class RouteOrder {
@@ -42,7 +67,7 @@ final routeOrdersProvider = FutureProvider<List<RouteOrder>>((ref) async {
       .from('orders')
       .select(
         'id, status, requested_delivery_date, shops(name, address), '
-        'order_items(quantity, unit, products(name))',
+        'order_items(quantity, unit, products(name, product_categories(name)))',
       )
       .inFilter('status',
           ['specialist_approved', 'in_progress', 'packaged', 'ready_for_courier', 'in_transit', 'delivered'])
@@ -58,7 +83,12 @@ final routeOrdersProvider = FutureProvider<List<RouteOrder>>((ref) async {
       deliveryDate: (r['requested_delivery_date'] ?? '') as String,
       items: items.map((i) {
         final m = i as Map<String, dynamic>;
-        return RouteItem((m['products']?['name'] ?? 'Item') as String, (m['quantity'] as num?) ?? 0, (m['unit'] ?? '') as String);
+        return RouteItem(
+          (m['products']?['name'] ?? 'Item') as String,
+          (m['quantity'] as num?) ?? 0,
+          (m['unit'] ?? '') as String,
+          catName: (m['products']?['product_categories']?['name'] ?? '') as String,
+        );
       }).toList(),
     );
   }).toList();
@@ -103,7 +133,9 @@ class _ShopGroup {
     for (final it in o.items) {
       final k = '${it.name}|${it.unit}';
       final ex = _merged[k];
-      _merged[k] = ex == null ? RouteItem(it.name, it.qty, it.unit) : RouteItem(ex.name, ex.qty + it.qty, ex.unit);
+      _merged[k] = ex == null
+          ? RouteItem(it.name, it.qty, it.unit, catName: it.catName)
+          : RouteItem(ex.name, ex.qty + it.qty, ex.unit, catName: ex.catName);
     }
   }
 
@@ -297,6 +329,14 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
             tooltip: 'Print route',
             onPressed: () {
               final groups = _groupByDayShop(ref.read(routeOrdersProvider).value ?? []);
+              final totalMap = <String, RouteItem>{};
+              for (final g in groups) {
+                for (final it in g.items) {
+                  final k = '${it.name}|${it.unit}';
+                  final ex = totalMap[k];
+                  totalMap[k] = ex == null ? it : RouteItem(ex.name, ex.qty + it.qty, ex.unit, catName: ex.catName);
+                }
+              }
               printSheet(
                 heading: 'Delivery Route',
                 subtitle: 'Ready & out-for-delivery, grouped by shop',
@@ -305,9 +345,11 @@ class _CourierRouteScreenState extends ConsumerState<CourierRouteScreen> {
                           title: g.shopName,
                           meta: '${g.statusSummary} · for ${g.deliveryDate}',
                           address: g.address,
-                          lines: g.items.map((it) => PrintLine(it.name, '${it.qty} ${it.unit}')).toList(),
+                          lines: _routeLines(g.items),
                         ))
                     .toList(),
+                perShopPages: true,
+                totals: _routeLines(totalMap.values.toList()),
               );
             },
           ),

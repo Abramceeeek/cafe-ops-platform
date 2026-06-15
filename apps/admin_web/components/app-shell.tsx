@@ -9,7 +9,7 @@ import {
   Inbox,
   PlusCircle,
   ClipboardList,
-  Files,
+  CalendarRange,
   KanbanSquare,
   Truck,
   Activity,
@@ -49,7 +49,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: [] },
   { href: "/account", label: "My Account", icon: User, roles: [] },
   { href: "/request", label: "New Request", icon: PlusCircle, roles: ["foh_manager", "kitchen_manager"] },
-  { href: "/templates", label: "Templates", icon: Files, roles: ["foh_manager", "kitchen_manager"] },
+  { href: "/standing-orders", label: "Standing Orders", icon: CalendarRange, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/orders", label: "Orders", icon: ClipboardList, roles: ["foh_manager", "kitchen_manager"] },
   { href: "/inbox", label: "Inbox", icon: Inbox, roles: ["meat_specialist", "bread_baker"] },
   { href: "/board", label: "Schedule", icon: KanbanSquare, roles: ["meat_specialist", "bread_baker"] },
@@ -61,7 +61,7 @@ const NAV: NavItem[] = [
 ];
 
 const READY = new Set([
-  "/", "/account", "/catalog", "/request", "/templates", "/inbox", "/orders", "/board", "/manifest",
+  "/", "/account", "/catalog", "/request", "/standing-orders", "/inbox", "/orders", "/board", "/manifest",
   "/live-ops", "/finance", "/users",
 ]);
 

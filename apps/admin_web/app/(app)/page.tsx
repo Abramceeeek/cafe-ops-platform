@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PlusCircle, Files, ChevronRight, Bell } from "lucide-react";
+import { PlusCircle, CalendarRange, ChevronRight, Bell } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -97,9 +97,9 @@ export default async function DashboardPage() {
             variant="secondary"
             className="h-24 flex-col items-start justify-between rounded-2xl p-4"
           >
-            <Link href="/templates">
-              <Files className="h-5 w-5" />
-              <span className="text-sm font-semibold">My Templates</span>
+            <Link href="/standing-orders">
+              <CalendarRange className="h-5 w-5" />
+              <span className="text-sm font-semibold">Standing Orders</span>
             </Link>
           </Button>
         </div>
