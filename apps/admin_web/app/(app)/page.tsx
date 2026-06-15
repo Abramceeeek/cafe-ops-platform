@@ -69,7 +69,7 @@ export default async function DashboardPage() {
       .order("effective_from", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const cutoffHour = parseInt((cfg?.cutoff_time ?? "16:00:00").split(":")[0], 10);
+    const cutoffHour = parseInt((cfg?.cutoff_time ?? "10:00:00").split(":")[0], 10);
 
     const { data } = await supabase
       .from("orders")

@@ -27,11 +27,11 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
 
   DateTime _earliest(num maxLead) {
     final nowUtc = DateTime.now().toUtc();
-    final cutoffPassed = _londonHour(nowUtc) >= 16;
-    // 48h floor: earliest is the day-after-tomorrow; +1 more past the 16:00 cut-off.
-    final leadDays = (maxLead / 24).ceil().clamp(2, 365);
+    // 10:00 London cut-off: order before it → next-day delivery; at/after → the day
+    // after. Uniform for every item (per-item lead time no longer extends the floor).
+    final cutoffPassed = _londonHour(nowUtc) >= 10;
     return DateTime.utc(nowUtc.year, nowUtc.month, nowUtc.day)
-        .add(Duration(days: leadDays + (cutoffPassed ? 1 : 0)));
+        .add(Duration(days: cutoffPassed ? 2 : 1));
   }
 
   bool get _isEmergency {

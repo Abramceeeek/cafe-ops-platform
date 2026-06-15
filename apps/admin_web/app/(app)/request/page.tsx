@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { submitOrder } from "@/app/actions/orders";
 import { createClient } from "@/lib/supabase/client";
+import { earliestDate } from "@/lib/utils";
 import { ROLE_LABEL } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,19 +49,6 @@ interface CartLine {
 // not a hardcoded regex — add a category in the DB, no deploy needed).
 function specialistFor(assignedRole: string | null | undefined): string {
   return (assignedRole && ROLE_LABEL[assignedRole]) || "Hub";
-}
-
-function earliestDate(now: Date, maxLeadHours: number): string {
-  const londonHour = Number(
-    new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false }).format(now),
-  );
-  const cutoffPassed = londonHour >= 16;
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  // 48h floor: earliest delivery is the day-after-tomorrow; +1 more past the 16:00 cut-off.
-  const leadDays = Math.max(2, Math.ceil(maxLeadHours / 24));
-  const penalty = cutoffPassed ? 1 : 0;
-  d.setUTCDate(d.getUTCDate() + leadDays + penalty);
-  return d.toISOString().slice(0, 10);
 }
 
 const WEEKDAY_OPTIONS = [
@@ -444,7 +432,7 @@ export default function NewRequestPage() {
             </p>
           ) : (
             <p className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock className="h-3 w-3" /> Earliest: {minDate} (4:00 PM London cut-off)
+              <Clock className="h-3 w-3" /> Earliest: {minDate} (10:00 AM London cut-off · order before 10 for next-day)
             </p>
           )}
         </div>

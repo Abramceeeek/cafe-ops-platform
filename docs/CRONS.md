@@ -37,11 +37,13 @@ $$ language plpgsql security definer;
 select cron.schedule('monthly-statement', '1 0 1 * *',
   $$ select call_edge_function('generate-monthly-statement'); $$);
 
--- 4.4 Cut-off warning — 30 min before the 16:00 Europe/London cut-off.
--- pg_cron is UTC-only: 15:30 London = 14:30 UTC (BST) / 15:30 UTC (GMT).
+-- 4.4 Cut-off warning — 30 min before the 10:00 Europe/London cut-off (0049).
+-- pg_cron is UTC-only: 09:30 London = 08:30 UTC (BST) / 09:30 UTC (GMT).
 -- DST caveat: adjust the hour at the clock change, or schedule both and let the
 -- function no-op when it isn't the right local time.
-select cron.schedule('cutoff-warning', '30 14 * * *',
+-- (Was 14:30 UTC for the old 16:00 cut-off — reschedule when you apply 0049:
+--  select cron.unschedule('cutoff-warning'); then re-run the line below.)
+select cron.schedule('cutoff-warning', '30 8 * * *',
   $$ select call_edge_function('cutoff-warning-cron'); $$);
 
 -- Standing orders — materialise the current ISO week's recurring orders daily.

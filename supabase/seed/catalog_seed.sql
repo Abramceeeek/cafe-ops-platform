@@ -52,8 +52,8 @@ JOIN (VALUES
   ('Pastry / Retail Bakery','Ret. Sourd. Bread','item')
 ) AS p(cat, name, unit) ON c.name = p.cat;
 
--- ── Cut-off default (§10.1) ─────────────────────────────────────────
-INSERT INTO cutoff_config (cutoff_time, timezone) VALUES ('16:00:00', 'Europe/London');
+-- ── Cut-off default (§10.1) — 10:00 London: order before it for next-day delivery.
+INSERT INTO cutoff_config (cutoff_time, timezone) VALUES ('10:00:00', 'Europe/London');
 
 -- ── Assertions ──────────────────────────────────────────────────────
 DO $$

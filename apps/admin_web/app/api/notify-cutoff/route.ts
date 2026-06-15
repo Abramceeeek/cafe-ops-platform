@@ -1,4 +1,4 @@
-// Cut-off reminder. Hit ~once daily before the 16:00 London cut-off by a pg_cron
+// Cut-off reminder. Hit ~once daily before the 10:00 London cut-off by a pg_cron
 // schedule (see supabase/manual/notify-crons.sql). Pushes the FOH/Kitchen
 // managers whose shop has NOT yet placed a confirmed order for tomorrow.
 import { NextResponse } from "next/server";
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     const res = await sendPush(
       tokens,
       "Cut-off coming up",
-      `Place your order for ${tomorrow} before 16:00 — your shop hasn't ordered yet.`,
+      `Place your order for ${tomorrow} before 10:00 — your shop hasn't ordered yet.`,
       { kind: "cutoff_reminder" },
     );
     return NextResponse.json({ ok: true, pushed: res.sent });

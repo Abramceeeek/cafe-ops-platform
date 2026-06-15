@@ -2,12 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_constants/shared_constants.dart';
 
-/// Live countdown to the next daily cut-off (Europe/London, default 16:00),
+/// Live countdown to the next daily cut-off (Europe/London, default 10:00),
 /// mirroring the web FOH "CutoffCountdown" banner. After the cut-off it counts
 /// to tomorrow's. Decorative warm-dark banner — readable in both themes.
 class CutoffCountdown extends StatefulWidget {
   final int cutoffHour;
-  const CutoffCountdown({super.key, this.cutoffHour = 16});
+  const CutoffCountdown({super.key, this.cutoffHour = 10});
 
   @override
   State<CutoffCountdown> createState() => _CutoffCountdownState();

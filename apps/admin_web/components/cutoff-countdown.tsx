@@ -5,7 +5,7 @@ import { Clock } from "lucide-react";
 
 // Live countdown to the next daily cut-off (Europe/London), matching the
 // bobo & wild "FOH Home" mockup. Decorative dark banner; works in both themes.
-export function CutoffCountdown({ cutoffHour = 16 }: { cutoffHour?: number }) {
+export function CutoffCountdown({ cutoffHour = 10 }: { cutoffHour?: number }) {
   const [secs, setSecs] = useState<number | null>(null);
 
   useEffect(() => {
