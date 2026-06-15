@@ -4,11 +4,12 @@ import '../../core/supabase_provider.dart';
 import '../request/request_providers.dart';
 
 class StandingItem {
+  final String productId;
   final num qty;
   final String? name; // null when 86'd / hidden by RLS
   final String unit;
   final String catName;
-  StandingItem({required this.qty, required this.name, required this.unit, required this.catName});
+  StandingItem({required this.productId, required this.qty, required this.name, required this.unit, required this.catName});
 }
 
 class StandingOrder {
@@ -42,13 +43,16 @@ String _nextMondayIso() {
   return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
+// Quantities can be fractional (e.g. 0.5 Focaccia); render whole numbers cleanly.
+String _fmtQty(num n) => n == n.truncate() ? n.truncate().toString() : n.toString();
+
 /// The shop's recurring standing orders (this manager's role, via RLS).
 final standingOrdersProvider = FutureProvider<List<StandingOrder>>((ref) async {
   final sb = ref.watch(supabaseProvider);
   final rows = await sb.from('standing_orders').select(
         'id, weekday, effective_from, '
-        'standing_order_items(quantity, products(name, unit, product_categories(name)))',
-      ).order('effective_from', ascending: false);
+        'standing_order_items(product_id, quantity, products(name, unit, product_categories(name)))',
+      ).order('effective_from', ascending: false).order('created_at', ascending: false);
   return (rows as List).map((r) {
     final items = (r['standing_order_items'] as List?) ?? [];
     return StandingOrder(
@@ -59,6 +63,7 @@ final standingOrdersProvider = FutureProvider<List<StandingOrder>>((ref) async {
         final m = it as Map<String, dynamic>;
         final p = m['products'] as Map<String, dynamic>?;
         return StandingItem(
+          productId: (m['product_id'] ?? '') as String,
           qty: (m['quantity'] as num?) ?? 0,
           name: p?['name'] as String?,
           unit: (p?['unit'] ?? '') as String,
@@ -183,7 +188,7 @@ class StandingOrdersScreen extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(child: Text(i.name ?? 'Unavailable item')),
-                        Text('${i.qty} ${i.unit}'),
+                        Text('${_fmtQty(i.qty)} ${i.unit}'),
                       ],
                     ),
                   )),
@@ -224,7 +229,7 @@ class _StandingEditor extends ConsumerStatefulWidget {
 }
 
 class _StandingEditorState extends ConsumerState<_StandingEditor> {
-  final Map<String, int> _qty = {}; // product_id -> quantity
+  final Map<String, num> _qty = {}; // product_id -> quantity (fractional allowed)
   bool _saving = false;
   bool _seeded = false;
 
@@ -233,11 +238,10 @@ class _StandingEditorState extends ConsumerState<_StandingEditor> {
       _seeded = true;
       return;
     }
-    // Seed by matching product name (the provider stores names, not ids).
-    final byName = {for (final p in products) p.name: p.id};
+    // Seed by product_id (stable; immune to duplicate/renamed product names).
+    final available = {for (final p in products) p.id};
     for (final i in widget.seed!.items) {
-      final id = i.name == null ? null : byName[i.name!];
-      if (id != null) _qty[id] = i.qty.toInt();
+      if (available.contains(i.productId)) _qty[i.productId] = i.qty; // keep fractional qty
     }
     _seeded = true;
   }
@@ -292,9 +296,9 @@ class _StandingEditorState extends ConsumerState<_StandingEditor> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline),
-                      onPressed: qty <= 0 ? null : () => setState(() => _qty[p.id] = qty - 1),
+                      onPressed: qty <= 0 ? null : () => setState(() => _qty[p.id] = (qty - 1) < 0 ? 0 : qty - 1),
                     ),
-                    Text('$qty'),
+                    Text(_fmtQty(qty)),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline),
                       onPressed: () => setState(() => _qty[p.id] = qty + 1),

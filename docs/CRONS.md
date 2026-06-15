@@ -48,6 +48,10 @@ select cron.schedule('cutoff-warning', '30 14 * * *',
 -- Pure DB (migration 0048): no Edge Function / Vault needed, call the RPC directly.
 -- Idempotent, so the exact time only needs to be early enough that today's order
 -- exists before production. 00:05 UTC is safe (well clear of the 16:00 cut-off).
+-- The RPC computes "today" + the ISO-week window from CURRENT_DATE (UTC). Keep the
+-- schedule early in the UTC day: Europe/London is never behind UTC, so at 00:05 UTC
+-- the UTC date already matches the London date. If you ever move this LATER in the
+-- UTC day, make the RPC's date timezone-aware first (else a day could be skipped).
 select cron.schedule('standing-orders-gen', '5 0 * * *',
   $$ select public.generate_standing_orders(); $$);
 ```
