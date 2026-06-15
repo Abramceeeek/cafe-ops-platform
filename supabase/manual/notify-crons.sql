@@ -7,16 +7,16 @@
 -- BEFORE APPLYING, replace:
 --   __BASE_URL__       e.g. https://<your-app>.vercel.app
 --   __NOTIFY_SECRET__  the same value set as NOTIFY_SECRET in Vercel env
--- Times are UTC. The 16:00 London cut-off is ~15:00 UTC (BST) / 16:00 UTC (GMT),
--- so 14:00 UTC fires ~1–2h before. Adjust to taste. Do NOT commit the
+-- Times are UTC. The 10:00 London cut-off is ~09:00 UTC (BST) / 10:00 UTC (GMT),
+-- so 08:00 UTC fires ~1h before. Adjust to taste. Do NOT commit the
 -- substituted file.
 
 DO $$
 BEGIN
   IF to_regproc('cron.schedule') IS NOT NULL AND to_regproc('net.http_post') IS NOT NULL THEN
-    -- #1 Cut-off reminder to shops — 14:00 UTC daily (before the 16:00 London cut-off)
+    -- #1 Cut-off reminder to shops — 08:00 UTC daily (before the 10:00 London cut-off)
     PERFORM cron.unschedule('cutoff-reminder') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'cutoff-reminder');
-    PERFORM cron.schedule('cutoff-reminder', '0 14 * * *', $cron$
+    PERFORM cron.schedule('cutoff-reminder', '0 8 * * *', $cron$
       SELECT net.http_post(
         url := '__BASE_URL__/api/notify-cutoff',
         headers := '{"Content-Type":"application/json","x-notify-secret":"__NOTIFY_SECRET__"}'::jsonb,
