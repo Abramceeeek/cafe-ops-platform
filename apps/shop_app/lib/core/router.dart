@@ -9,21 +9,21 @@ import '../features/auth/login_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/request/request_screen.dart';
 import '../features/orders/orders_screen.dart';
-import '../features/templates/templates_screen.dart';
+import '../features/standing/standing_orders_screen.dart';
 import '../features/account/account_screen.dart';
 import 'supabase_provider.dart';
 
 final _homeKey = GlobalKey<NavigatorState>();
 final _requestKey = GlobalKey<NavigatorState>();
 final _ordersKey = GlobalKey<NavigatorState>();
-final _templatesKey = GlobalKey<NavigatorState>();
+final _standingKey = GlobalKey<NavigatorState>();
 final _accountKey = GlobalKey<NavigatorState>();
 
 const _destinations = <NavDestinationData>[
   NavDestinationData(Icons.dashboard_outlined, Icons.dashboard, 'Home'),
   NavDestinationData(Icons.add_shopping_cart_outlined, Icons.add_shopping_cart, 'Request'),
   NavDestinationData(Icons.receipt_long_outlined, Icons.receipt_long, 'Orders'),
-  NavDestinationData(Icons.bookmark_border, Icons.bookmark, 'Templates'),
+  NavDestinationData(Icons.event_repeat_outlined, Icons.event_repeat, 'Standing'),
   NavDestinationData(Icons.person_outline, Icons.person, 'Account'),
 ];
 
@@ -88,8 +88,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [GoRoute(path: '/orders', builder: (c, s) => const OrdersScreen())],
           ),
           StatefulShellBranch(
-            navigatorKey: _templatesKey,
-            routes: [GoRoute(path: '/templates', builder: (c, s) => const TemplatesScreen())],
+            navigatorKey: _standingKey,
+            routes: [GoRoute(path: '/standing-orders', builder: (c, s) => const StandingOrdersScreen())],
           ),
           StatefulShellBranch(
             navigatorKey: _accountKey,

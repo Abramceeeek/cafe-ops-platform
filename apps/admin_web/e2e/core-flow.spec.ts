@@ -31,12 +31,12 @@ test("FOH: New Request catalog is populated and interactive", async ({ page }) =
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
-test("FOH: orders + templates render", async ({ page }) => {
+test("FOH: orders + standing orders render", async ({ page }) => {
   await login(page, "foh.shoreditch@bobo.wild");
   await page.goto("/orders");
   await expect(page.getByRole("heading", { name: "Order History" })).toBeVisible();
-  await page.goto("/templates");
-  await expect(page.getByRole("heading", { name: "My Templates" })).toBeVisible();
+  await page.goto("/standing-orders");
+  await expect(page.getByRole("heading", { name: "Standing Orders" })).toBeVisible();
 });
 
 test("Specialist: inbox + board render", async ({ page }) => {

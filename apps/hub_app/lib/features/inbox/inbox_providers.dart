@@ -8,7 +8,8 @@ class PendingItem {
   final String name;
   final num qty;
   final String unit;
-  PendingItem(this.id, this.name, this.qty, this.unit);
+  final String catName; // product category (for pastry→bread ordering on the schedule)
+  PendingItem(this.id, this.name, this.qty, this.unit, {this.catName = ''});
 }
 
 class PendingOrder {

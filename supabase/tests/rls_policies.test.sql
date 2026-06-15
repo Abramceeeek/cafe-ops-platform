@@ -253,4 +253,83 @@ DO $$ DECLARE c int; BEGIN
 END $$;
 RESET ROLE;
 
+-- ── STANDING ORDERS: shop+owner_role isolation (0046), category guard +
+--    auto-approved generation + idempotency + next-week lock (0047/0048) ──
+-- Reuse FOH A / FOH B / Kitchen A (all from above). Croissant (ddddddd…d4) is the
+-- bread_baker pastry product; Lamb (…d1) is meat_specialist.
+
+-- 1) FOH A saves a pastry standing order for TODAY'S weekday, effective now.
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}';
+SET ROLE authenticated;
+SELECT public.save_standing_order(
+  EXTRACT(ISODOW FROM CURRENT_DATE)::int, CURRENT_DATE,
+  json_build_array(json_build_object('product_id','dddddddd-dddd-dddd-dddd-ddddddddddd4','quantity',5))::jsonb);
+
+-- 2) Guard: FOH cannot put a Meat item in a (auto-approved) standing order.
+DO $$ BEGIN
+  PERFORM public.save_standing_order(
+    EXTRACT(ISODOW FROM CURRENT_DATE)::int, CURRENT_DATE,
+    json_build_array(json_build_object('product_id','dddddddd-dddd-dddd-dddd-ddddddddddd1','quantity',1))::jsonb);
+  RAISE EXCEPTION 'FOH was allowed to add a Meat item to a standing order — guard failed.';
+EXCEPTION WHEN OTHERS THEN
+  IF SQLERRM LIKE '%guard failed%' THEN RAISE; END IF;  -- re-raise our own; swallow the expected security_bypass
+END $$;
+RESET ROLE;
+
+-- 3) Isolation: FOH B (other shop) and Kitchen A (same shop, other role) see none.
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111102"}'; SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM standing_orders;
+  IF c <> 0 THEN RAISE EXCEPTION 'FOH B should see 0 standing orders, saw %', c; END IF;
+END $$;
+RESET ROLE;
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111103"}'; SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM standing_orders;
+  IF c <> 0 THEN RAISE EXCEPTION 'Kitchen A should see 0 FOH standing orders (role-isolated), saw %', c; END IF;
+END $$;
+RESET ROLE;
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}'; SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM standing_orders;
+  IF c <> 1 THEN RAISE EXCEPTION 'FOH A should see its 1 standing order, saw %', c; END IF;
+END $$;
+RESET ROLE;
+
+-- 4) Generate (superuser; the function is service_role-only) → one auto-approved
+--    order for Shop A today, qty 5.
+SELECT public.generate_standing_orders();
+DO $$ DECLARE c int; st text; q numeric; BEGIN
+  SELECT count(*) INTO c FROM orders
+   WHERE is_standing AND shop_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1' AND requested_delivery_date=CURRENT_DATE;
+  IF c <> 1 THEN RAISE EXCEPTION 'expected 1 generated standing order for Shop A today, got %', c; END IF;
+  SELECT o.status, oi.quantity INTO st, q
+   FROM orders o JOIN order_items oi ON oi.order_id=o.id
+   WHERE o.is_standing AND o.shop_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1' AND o.requested_delivery_date=CURRENT_DATE;
+  IF st <> 'specialist_approved' THEN RAISE EXCEPTION 'standing order must be auto-approved, status=%', st; END IF;
+  IF q <> 5 THEN RAISE EXCEPTION 'generated qty expected 5, got %', q; END IF;
+END $$;
+
+-- 5) Idempotent: a second run creates nothing new.
+SELECT public.generate_standing_orders();
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM orders
+   WHERE is_standing AND shop_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1' AND requested_delivery_date=CURRENT_DATE;
+  IF c <> 1 THEN RAISE EXCEPTION 'generate not idempotent, got % orders', c; END IF;
+END $$;
+
+-- 6) Next-week edit is locked out of the current week: a new version effective next
+--    Monday must NOT change today's already-generated order.
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}'; SET ROLE authenticated;
+SELECT public.save_standing_order(
+  EXTRACT(ISODOW FROM CURRENT_DATE)::int, (date_trunc('week', CURRENT_DATE)::date + 7),
+  json_build_array(json_build_object('product_id','dddddddd-dddd-dddd-dddd-ddddddddddd4','quantity',99))::jsonb);
+RESET ROLE;
+SELECT public.generate_standing_orders();
+DO $$ DECLARE q numeric; BEGIN
+  SELECT oi.quantity INTO q FROM orders o JOIN order_items oi ON oi.order_id=o.id
+   WHERE o.is_standing AND o.shop_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1' AND o.requested_delivery_date=CURRENT_DATE;
+  IF q <> 5 THEN RAISE EXCEPTION 'current week must stay locked at 5 after a next-week edit, got %', q; END IF;
+END $$;
+
 SELECT 'rls_policies.test.sql: all scenarios passed' AS result;
