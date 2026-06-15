@@ -43,6 +43,9 @@ String _nextMondayIso() {
   return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }
 
+// Quantities can be fractional (e.g. 0.5 Focaccia); render whole numbers cleanly.
+String _fmtQty(num n) => n == n.truncate() ? n.truncate().toString() : n.toString();
+
 /// The shop's recurring standing orders (this manager's role, via RLS).
 final standingOrdersProvider = FutureProvider<List<StandingOrder>>((ref) async {
   final sb = ref.watch(supabaseProvider);
@@ -185,7 +188,7 @@ class StandingOrdersScreen extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(child: Text(i.name ?? 'Unavailable item')),
-                        Text('${i.qty} ${i.unit}'),
+                        Text('${_fmtQty(i.qty)} ${i.unit}'),
                       ],
                     ),
                   )),
@@ -226,7 +229,7 @@ class _StandingEditor extends ConsumerStatefulWidget {
 }
 
 class _StandingEditorState extends ConsumerState<_StandingEditor> {
-  final Map<String, int> _qty = {}; // product_id -> quantity
+  final Map<String, num> _qty = {}; // product_id -> quantity (fractional allowed)
   bool _saving = false;
   bool _seeded = false;
 
@@ -238,7 +241,7 @@ class _StandingEditorState extends ConsumerState<_StandingEditor> {
     // Seed by product_id (stable; immune to duplicate/renamed product names).
     final available = {for (final p in products) p.id};
     for (final i in widget.seed!.items) {
-      if (available.contains(i.productId)) _qty[i.productId] = i.qty.toInt();
+      if (available.contains(i.productId)) _qty[i.productId] = i.qty; // keep fractional qty
     }
     _seeded = true;
   }
@@ -293,9 +296,9 @@ class _StandingEditorState extends ConsumerState<_StandingEditor> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline),
-                      onPressed: qty <= 0 ? null : () => setState(() => _qty[p.id] = qty - 1),
+                      onPressed: qty <= 0 ? null : () => setState(() => _qty[p.id] = (qty - 1) < 0 ? 0 : qty - 1),
                     ),
-                    Text('$qty'),
+                    Text(_fmtQty(qty)),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline),
                       onPressed: () => setState(() => _qty[p.id] = qty + 1),
