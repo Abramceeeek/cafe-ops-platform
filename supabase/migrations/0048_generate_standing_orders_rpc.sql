@@ -48,7 +48,7 @@ BEGIN
         SELECT DISTINCT p.category_id
         FROM public.standing_order_items si
         JOIN public.products p ON p.id = si.product_id
-        WHERE si.standing_order_id = v_spec.id
+        WHERE si.standing_order_id = v_spec.id AND p.is_available = true
       LOOP
         INSERT INTO public.orders (
           shop_id, submitted_by, status, requested_delivery_date,
@@ -65,7 +65,7 @@ BEGIN
           SELECT si.id, si.product_id, si.quantity, si.custom_note, p.unit, p.price
           FROM public.standing_order_items si
           JOIN public.products p ON p.id = si.product_id
-          WHERE si.standing_order_id = v_spec.id AND p.category_id = v_cat.category_id
+          WHERE si.standing_order_id = v_spec.id AND p.category_id = v_cat.category_id AND p.is_available = true
         LOOP
           INSERT INTO public.order_items (
             order_id, product_id, quantity, requested_quantity, unit, custom_note, unit_cost
