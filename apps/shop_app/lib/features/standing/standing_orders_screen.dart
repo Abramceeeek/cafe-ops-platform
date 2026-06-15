@@ -4,11 +4,12 @@ import '../../core/supabase_provider.dart';
 import '../request/request_providers.dart';
 
 class StandingItem {
+  final String productId;
   final num qty;
   final String? name; // null when 86'd / hidden by RLS
   final String unit;
   final String catName;
-  StandingItem({required this.qty, required this.name, required this.unit, required this.catName});
+  StandingItem({required this.productId, required this.qty, required this.name, required this.unit, required this.catName});
 }
 
 class StandingOrder {
@@ -47,8 +48,8 @@ final standingOrdersProvider = FutureProvider<List<StandingOrder>>((ref) async {
   final sb = ref.watch(supabaseProvider);
   final rows = await sb.from('standing_orders').select(
         'id, weekday, effective_from, '
-        'standing_order_items(quantity, products(name, unit, product_categories(name)))',
-      ).order('effective_from', ascending: false);
+        'standing_order_items(product_id, quantity, products(name, unit, product_categories(name)))',
+      ).order('effective_from', ascending: false).order('created_at', ascending: false);
   return (rows as List).map((r) {
     final items = (r['standing_order_items'] as List?) ?? [];
     return StandingOrder(
@@ -59,6 +60,7 @@ final standingOrdersProvider = FutureProvider<List<StandingOrder>>((ref) async {
         final m = it as Map<String, dynamic>;
         final p = m['products'] as Map<String, dynamic>?;
         return StandingItem(
+          productId: (m['product_id'] ?? '') as String,
           qty: (m['quantity'] as num?) ?? 0,
           name: p?['name'] as String?,
           unit: (p?['unit'] ?? '') as String,
@@ -233,11 +235,10 @@ class _StandingEditorState extends ConsumerState<_StandingEditor> {
       _seeded = true;
       return;
     }
-    // Seed by matching product name (the provider stores names, not ids).
-    final byName = {for (final p in products) p.name: p.id};
+    // Seed by product_id (stable; immune to duplicate/renamed product names).
+    final available = {for (final p in products) p.id};
     for (final i in widget.seed!.items) {
-      final id = i.name == null ? null : byName[i.name!];
-      if (id != null) _qty[id] = i.qty.toInt();
+      if (available.contains(i.productId)) _qty[i.productId] = i.qty.toInt();
     }
     _seeded = true;
   }

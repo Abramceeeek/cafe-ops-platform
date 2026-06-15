@@ -71,7 +71,8 @@ export default function StandingOrdersPage() {
           `id, weekday, effective_from,
            standing_order_items ( quantity, products ( id, name, unit, product_categories ( name ) ) )`,
         )
-        .order("effective_from", { ascending: false }),
+        .order("effective_from", { ascending: false })
+        .order("created_at", { ascending: false }),
     ]);
     setCategories(cats ?? []);
     setProducts(prods ?? []);
