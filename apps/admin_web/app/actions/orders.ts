@@ -94,8 +94,8 @@ export async function submitOrder(payload: Payload) {
     .limit(1)
     .single();
 
-  const cutoffTimeString = cutoffConfig?.cutoff_time || "16:00:00";
-  const cutoffHour = parseInt(cutoffTimeString.split(":")[0] || "16", 10);
+  const cutoffTimeString = cutoffConfig?.cutoff_time || "10:00:00";
+  const cutoffHour = parseInt(cutoffTimeString.split(":")[0] || "10", 10);
 
   const getLondonHour = (d: Date) => {
     const year = d.getUTCFullYear();
@@ -172,7 +172,7 @@ export async function submitOrder(payload: Payload) {
   for (const it of payload.items) {
     if (it.quantity <= 0) errors.push(`Quantity must be positive for ${it.product_id}.`);
     if (!payload.emergency && !isDeliveryDateValid(payload.requested_delivery_date, now, cutoffPassed, it.lead_time_hours)) {
-      errors.push(`${it.product_id} needs ${it.lead_time_hours}h lead time; earliest delivery ${earliestDate(now, it.lead_time_hours, cutoffPassed)}.`);
+      errors.push(`Earliest delivery is ${earliestDate(now, it.lead_time_hours, cutoffPassed)} (order before 10:00 for next-day).`);
     }
   }
 
