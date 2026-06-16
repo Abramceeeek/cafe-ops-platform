@@ -35,9 +35,9 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate iOS platform files
+      - name: Generate platform files (ios + android so launcher-icons can run)
         working-directory: apps/${{ matrix.app }}
-        run: flutter create --platforms=ios --org com.hubsync .
+        run: flutter create --platforms=ios,android --org com.hubsync .
 
       - name: Configure iOS (bundle id, deployment target, Firebase plist)
         working-directory: apps/${{ matrix.app }}
