@@ -25,10 +25,11 @@ Bundle IDs: **`com.hubsync.hub`** and **`com.hubsync.shop`**.
 - ✅ **Firebase iOS apps** registered for both bundle IDs.
 - ✅ **`GoogleService-Info` plists committed** to `firebase/GoogleService-Info-{hub,shop}.plist`
   and auto-copied into `ios/Runner/` by `build-ios.yml` (mirrors the Android `google-services.json`).
-- ⬜ **Team ID** — still needed (developer.apple.com → Membership). Fill in below.
-- ⬜ Upload the APNs `.p8` to Firebase (Step 3) · ⬜ First signed build (Step 6) · ⬜ TestFlight testers (Step 8).
+- ✅ **Team ID** = `6HMKG4FFPY` (Abdurakhmonbek Fayzullaev).
+- ✅ **APNs key uploaded to Firebase** Cloud Messaging (both apps, dev + prod) — push is wired server-side.
+- ⬜ First build on a Mac (Path A) · ⬜ TestFlight testers (Step 8).
 
-`TEAM_ID = ____________` (10 chars, e.g. `ABCDE12345`)
+`TEAM_ID = 6HMKG4FFPY`
 
 ## STEP 1 — App IDs with Push capability · YOU ✅/verify
 developer.apple.com → **Certificates, Identifiers & Profiles → Identifiers**. For
@@ -39,11 +40,9 @@ creates these; just confirm Push is on.)
 ## STEP 2 — APNs key · YOU ✅
 Done — Key ID **`4RBSSD2227`**, `.p8` saved by owner. (One key covers both apps.)
 
-## STEP 3 — Upload the APNs key to Firebase · YOU ⬜ (do this now)
-This is what actually lets push reach iPhones:
-Firebase → **Project settings → Cloud Messaging → Apple app configuration →
-APNs Authentication Key → Upload** → choose the `.p8`, enter **Key ID `4RBSSD2227`**
-and your **Team ID**. One upload covers both apps.
+## STEP 3 — Upload the APNs key to Firebase · DONE ✅
+Uploaded the `.p8` (Key ID `4RBSSD2227`, Team ID `6HMKG4FFPY`) to Cloud Messaging
+for both apps (dev + prod slots). This is what lets push reach iPhones.
 
 ## STEP 4 — Firebase iOS configs · DONE ✅
 Both plists are committed under `firebase/`. Nothing else to download.
