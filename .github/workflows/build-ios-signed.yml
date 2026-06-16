@@ -20,13 +20,16 @@ permissions:
 jobs:
   ios-signed:
     name: ios-signed
-    runs-on: macos-latest
+    runs-on: macos-26   # Xcode 26 / iOS 26 SDK (Apple requires it for uploads as of 2026-06-16)
     strategy:
       fail-fast: false
       matrix:
         app: [shop_app, hub_app]
     steps:
       - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable   # newest Xcode on the image (26.x → iOS 26 SDK)
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
