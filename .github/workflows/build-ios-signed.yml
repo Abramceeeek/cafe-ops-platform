@@ -61,7 +61,9 @@ jobs:
         working-directory: apps/${{ matrix.app }}
         run: |
           flutter pub get
+          dart run flutter_launcher_icons   # generate the iOS app icon from assets/brand/app_icon.png
           flutter build ios --release --no-codesign \
+            --build-number=${{ github.run_number }} \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
