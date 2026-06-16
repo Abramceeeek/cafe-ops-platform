@@ -92,7 +92,7 @@ Future<void> printSheet({
                       ),
                       pw.Padding(
                         padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        child: pw.Text(l.qty, style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+                        child: pw.Text(l.qty, style: const pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
                       ),
                       pw.Container(
                         decoration: const pw.BoxDecoration(
@@ -115,7 +115,7 @@ Future<void> printSheet({
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text(heading, style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+            pw.Text(heading, style: const pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 2),
             pw.Text(subtitle, style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
             pw.Text('bobo & wild · HubSync · ${blocks.length} shop${blocks.length == 1 ? '' : 's'}',
