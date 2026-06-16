@@ -40,6 +40,11 @@ jobs:
           # e.g. shop_app) and on the Podfile when one exists (CocoaPods path, hub_app).
           sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" ios/Runner.xcodeproj/project.pbxproj
           if [ -f ios/Podfile ]; then sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile; fi
+          # Firebase iOS config (per app, committed under /firebase like google-services.json).
+          # firebase_core reads it at runtime; for a SIGNED build it must also be added to the
+          # Runner target in Xcode (docs/IOS_SETUP.md). The unsigned compile check below
+          # doesn't require it, but we stage it so the signed-build extension is one step away.
+          cp "../../firebase/GoogleService-Info-${SHORT}.plist" ios/Runner/GoogleService-Info.plist
       - name: Build iOS (unsigned — verifies the code compiles)
         working-directory: apps/${{ matrix.app }}
         run: |
