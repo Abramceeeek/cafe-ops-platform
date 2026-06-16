@@ -1,0 +1,115 @@
+name: build-ios-signed
+
+# Builds BOTH Flutter apps SIGNED and uploads to TestFlight using ONLY an
+# App Store Connect API key — NO Mac, NO .p12 certificate, NO .mobileprovision.
+# Xcode "cloud" automatic signing (-allowProvisioningUpdates + the API key)
+# creates the distribution certificate + provisioning profile on Apple's side.
+#
+# Required secrets: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (base64 of the .p8),
+#                   IOS_TEAM_ID, SUPABASE_URL, SUPABASE_ANON_KEY.
+# Prereq: the two app records must exist in App Store Connect (com.hubsync.hub,
+#         com.hubsync.shop) or the TestFlight upload step fails.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/ios-signed]
+
+permissions:
+  contents: read
+
+jobs:
+  ios-signed:
+    name: ios-signed
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [shop_app, hub_app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate iOS platform files
+        working-directory: apps/${{ matrix.app }}
+        run: flutter create --platforms=ios --org com.hubsync .
+
+      - name: Configure iOS (bundle id, deployment target, Firebase plist)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
+          NEW="com.hubsync.${SHORT}"
+          echo "bundle id -> $NEW"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${NEW};/g" ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" ios/Runner.xcodeproj/project.pbxproj
+          if [ -f ios/Podfile ]; then sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile; fi
+          cp "../../firebase/GoogleService-Info-${SHORT}.plist" ios/Runner/GoogleService-Info.plist
+
+      - name: Add GoogleService-Info.plist to Runner target
+        working-directory: apps/${{ matrix.app }}
+        continue-on-error: true   # runtime-only (Firebase); don't block the signing test
+        run: |
+          gem install xcodeproj --quiet --no-document
+          ruby ../../scripts/add_plist_to_xcode.rb . GoogleService-Info
+
+      - name: Build Flutter (no codesign — primes the Flutter framework + pods)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Write API key + ExportOptions.plist
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          echo "${{ secrets.ASC_KEY_P8 }}" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${{ secrets.IOS_TEAM_ID }}</string>
+            <key>uploadSymbols</key><false/>
+          </dict></plist>
+          EOF
+
+      - name: Archive + export signed IPA (cloud signing)
+        working-directory: apps/${{ matrix.app }}/ios
+        run: |
+          AUTH=( -allowProvisioningUpdates \
+                 -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8" \
+                 -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+                 -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" )
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+            -sdk iphoneos -configuration Release \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            "${AUTH[@]}" \
+            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="${{ secrets.IOS_TEAM_ID }}" \
+            archive
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ipa" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            "${AUTH[@]}"
+          ls -la "$RUNNER_TEMP/ipa"
+
+      - name: Upload to TestFlight
+        run: |
+          gem install fastlane --quiet --no-document
+          IPA=$(ls "$RUNNER_TEMP/ipa"/*.ipa | head -1)
+          echo "Uploading $IPA"
+          cat > "$RUNNER_TEMP/asc_key.json" <<EOF
+          {"key_id":"${{ secrets.ASC_KEY_ID }}","issuer_id":"${{ secrets.ASC_ISSUER_ID }}","key":"${{ secrets.ASC_KEY_P8 }}","is_key_content_base64":true,"in_house":false}
+          EOF
+          fastlane pilot upload \
+            --ipa "$IPA" \
+            --api_key_path "$RUNNER_TEMP/asc_key.json" \
+            --skip_waiting_for_build_processing true \
+            --skip_submission true
+
+      - name: Result
+        run: echo "✅ ${{ matrix.app }} signed + uploaded to TestFlight."
