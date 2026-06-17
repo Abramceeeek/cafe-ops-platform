@@ -45,8 +45,11 @@ export async function middleware(request: NextRequest) {
   }
 
   const isLogin = request.nextUrl.pathname.startsWith("/login");
-  // /privacy is the public App Store privacy policy — reachable without a session.
-  const isPublic = isLogin || request.nextUrl.pathname.startsWith("/privacy");
+  // /privacy and /support are public App Store pages — reachable without a session.
+  const isPublic =
+    isLogin ||
+    request.nextUrl.pathname.startsWith("/privacy") ||
+    request.nextUrl.pathname.startsWith("/support");
 
   if ((!user || !isActive) && !isPublic) {
     const redirect = request.nextUrl.clone();
