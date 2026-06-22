@@ -103,10 +103,17 @@ jobs:
           security unlock-keychain -p "$KCPASS" "$KC"
           echo "$P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
           security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$P12_PASS" -A -T /usr/bin/codesign -T /usr/bin/security
+          # Apple WWDR intermediates — without them the cert chain is incomplete and the
+          # identity is reported invalid (0 valid identities). Import both common ones.
+          for w in AppleWWDRCAG3 AppleWWDRCAG6; do
+            curl -fsSL -o "$RUNNER_TEMP/$w.cer" "https://www.apple.com/certificateauthority/$w.cer" \
+              && security import "$RUNNER_TEMP/$w.cer" -k "$KC" -T /usr/bin/codesign || true
+          done
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          echo "--- all identities in keychain (valid or not) ---"; security find-identity "$KC" || true
           IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep -oE '"[^"]+"' | head -1 | tr -d '"')
-          [ -n "$IDENTITY" ] || { echo "ERROR: no signing identity found in IOS_DIST_CERT_P12"; security find-identity -v "$KC"; exit 1; }
+          [ -n "$IDENTITY" ] || { echo "ERROR: no VALID signing identity in IOS_DIST_CERT_P12 (see list above — if empty, the .p12 has no private key)"; exit 1; }
           echo "Signing identity: $IDENTITY"
           # 3. mint a fresh App Store provisioning profile (Admin key); includes push
           #    because the App ID has Push Notifications enabled.
