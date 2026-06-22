@@ -104,15 +104,16 @@ jobs:
                  -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" )
           # retry wrapper: Apple's signing endpoints occasionally drop the connection.
           retry() { for i in 1 2 3; do "$@" && return 0; echo "attempt $i failed; retry in 20s"; sleep 20; done; return 1; }
-          # Archive WITH cloud distribution signing (Admin API key). Signing the archive
-          # — instead of CODE_SIGNING_ALLOWED=NO — is what records the aps-environment
-          # entitlement into the build so it survives re-signing at export. Distribution
-          # (App Store) signing needs no registered devices, unlike development signing.
+          # Ad-hoc sign the archive (CODE_SIGN_IDENTITY="-"): this bakes the
+          # aps-environment entitlement into the build and records it in the archive,
+          # WITHOUT a team, provisioning profile, or registered devices (automatic
+          # archive signing tries to make a *development* profile, which needs devices
+          # — the catch-22). The export step below then re-signs for the App Store via
+          # cloud distribution and carries the recorded entitlement through.
           retry xcodebuild -workspace Runner.xcworkspace -scheme Runner \
             -sdk iphoneos -configuration Release \
             -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
-            DEVELOPMENT_TEAM=${{ secrets.IOS_TEAM_ID }} CODE_SIGN_STYLE=Automatic \
-            "${AUTH[@]}" \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual CODE_SIGNING_REQUIRED=NO PROVISIONING_PROFILE_SPECIFIER="" \
             archive
           retry xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
