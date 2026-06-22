@@ -111,6 +111,7 @@ jobs:
           retry xcodebuild -workspace Runner.xcworkspace -scheme Runner \
             -sdk iphoneos -configuration Release \
             -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            DEVELOPMENT_TEAM=${{ secrets.IOS_TEAM_ID }} CODE_SIGN_STYLE=Automatic \
             "${AUTH[@]}" \
             archive
           retry xcodebuild -exportArchive \
