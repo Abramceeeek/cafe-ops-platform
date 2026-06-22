@@ -95,23 +95,25 @@ jobs:
           </dict></plist>
           EOF
 
-      - name: Archive (unsigned) + export App Store IPA (distribution cloud signing)
+      - name: Archive + export App Store IPA (cloud distribution signing)
         working-directory: apps/${{ matrix.app }}/ios
         run: |
           AUTH=( -allowProvisioningUpdates \
                  -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8" \
                  -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
                  -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" )
-          # Archive WITHOUT signing: automatic signing during 'archive' resolves to a
-          # DEVELOPMENT profile (needs registered devices) and fails. Distribution
-          # signing is applied at the EXPORT step instead (App Store profile, no devices).
-          xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+          # retry wrapper: Apple's signing endpoints occasionally drop the connection.
+          retry() { for i in 1 2 3; do "$@" && return 0; echo "attempt $i failed; retry in 20s"; sleep 20; done; return 1; }
+          # Archive WITH cloud distribution signing (Admin API key). Signing the archive
+          # — instead of CODE_SIGNING_ALLOWED=NO — is what records the aps-environment
+          # entitlement into the build so it survives re-signing at export. Distribution
+          # (App Store) signing needs no registered devices, unlike development signing.
+          retry xcodebuild -workspace Runner.xcworkspace -scheme Runner \
             -sdk iphoneos -configuration Release \
             -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            "${AUTH[@]}" \
             archive
-          # Export re-signs for the App Store using the API key (cloud distribution cert + profile).
-          xcodebuild -exportArchive \
+          retry xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
             -exportPath "$RUNNER_TEMP/ipa" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
