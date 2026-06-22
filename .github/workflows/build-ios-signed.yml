@@ -101,15 +101,22 @@ jobs:
           security create-keychain -p "$KCPASS" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KCPASS" "$KC"
-          # The IOS_DIST_CERT_P12 secret has no private key, so it can't sign. Instead let
-          # fastlane mint a managed Apple Distribution certificate: it generates the private
-          # key locally and imports the cert (+ WWDR intermediate) into our keychain.
+          # Make our keychain the default + in the search list, and import the Apple WWDR
+          # intermediates FIRST — fastlane cert verifies the new cert with `find-identity -v`,
+          # which reports 0 valid identities unless the chain (WWDR) is present in the keychain.
+          security default-keychain -s "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          for w in AppleWWDRCAG3 AppleWWDRCAG6; do
+            curl -fsSL -o "$RUNNER_TEMP/$w.cer" "https://www.apple.com/certificateauthority/$w.cer" \
+              && security import "$RUNNER_TEMP/$w.cer" -k "$KC" || true
+          done
+          # The IOS_DIST_CERT_P12 secret had no private key, so mint a managed Apple
+          # Distribution certificate (fastlane generates the private key locally).
           gem install fastlane --quiet --no-document
           fastlane cert --api_key_path "$RUNNER_TEMP/asc_key.json" \
             --keychain_path "$KC" --keychain_password "$KCPASS" --output_path "$RUNNER_TEMP/certs"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null 2>&1 || true
-          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          echo "--- identities in keychain ---"; security find-identity "$KC" || true
+          echo "--- identities in keychain ---"; security find-identity -v -p codesigning "$KC" || true
           IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep -oE '"[^"]+"' | head -1 | tr -d '"')
           [ -n "$IDENTITY" ] || { echo "ERROR: fastlane cert produced no signing identity"; exit 1; }
           echo "Signing identity: $IDENTITY"
