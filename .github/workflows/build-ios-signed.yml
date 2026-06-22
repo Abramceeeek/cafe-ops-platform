@@ -101,23 +101,20 @@ jobs:
           security create-keychain -p "$KCPASS" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KCPASS" "$KC"
-          echo "$P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
-          security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$P12_PASS" -A -T /usr/bin/codesign -T /usr/bin/security
-          # Apple WWDR intermediates — without them the cert chain is incomplete and the
-          # identity is reported invalid (0 valid identities). Import both common ones.
-          for w in AppleWWDRCAG3 AppleWWDRCAG6; do
-            curl -fsSL -o "$RUNNER_TEMP/$w.cer" "https://www.apple.com/certificateauthority/$w.cer" \
-              && security import "$RUNNER_TEMP/$w.cer" -k "$KC" -T /usr/bin/codesign || true
-          done
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          # The IOS_DIST_CERT_P12 secret has no private key, so it can't sign. Instead let
+          # fastlane mint a managed Apple Distribution certificate: it generates the private
+          # key locally and imports the cert (+ WWDR intermediate) into our keychain.
+          gem install fastlane --quiet --no-document
+          fastlane cert --api_key_path "$RUNNER_TEMP/asc_key.json" \
+            --keychain_path "$KC" --keychain_password "$KCPASS" --output_path "$RUNNER_TEMP/certs"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null 2>&1 || true
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          echo "--- all identities in keychain (valid or not) ---"; security find-identity "$KC" || true
+          echo "--- identities in keychain ---"; security find-identity "$KC" || true
           IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep -oE '"[^"]+"' | head -1 | tr -d '"')
-          [ -n "$IDENTITY" ] || { echo "ERROR: no VALID signing identity in IOS_DIST_CERT_P12 (see list above — if empty, the .p12 has no private key)"; exit 1; }
+          [ -n "$IDENTITY" ] || { echo "ERROR: fastlane cert produced no signing identity"; exit 1; }
           echo "Signing identity: $IDENTITY"
           # 3. mint a fresh App Store provisioning profile (Admin key); includes push
           #    because the App ID has Push Notifications enabled.
-          gem install fastlane --quiet --no-document
           fastlane sigh --api_key_path "$RUNNER_TEMP/asc_key.json" \
             --app_identifier "$BUNDLE" --platform ios --output_path "$RUNNER_TEMP" --force
           PROF=$(ls -t "$RUNNER_TEMP"/*.mobileprovision | head -1)
