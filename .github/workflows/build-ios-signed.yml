@@ -57,6 +57,19 @@ jobs:
           gem install xcodeproj --quiet --no-document
           ruby ../../scripts/add_plist_to_xcode.rb . GoogleService-Info
 
+      - name: Add Push Notifications entitlement (aps-environment) + background mode
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          gem install xcodeproj --quiet --no-document
+          # aps-environment=production + CODE_SIGN_ENTITLEMENTS on the Runner target.
+          # Without this the signed build has no push entitlement and APNs/FCM never deliver.
+          ruby ../../scripts/add_push_entitlement.rb . production
+          # remote-notification background mode (Firebase background message handler).
+          PL=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PL" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string remote-notification" "$PL" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$PL" || true
+
       - name: Build Flutter (no codesign — primes the Flutter framework + pods)
         working-directory: apps/${{ matrix.app }}
         run: |
@@ -104,6 +117,20 @@ jobs:
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             "${AUTH[@]}"
           ls -la "$RUNNER_TEMP/ipa"
+
+      - name: Verify push entitlement is embedded (fail before upload if missing)
+        run: |
+          rm -rf "$RUNNER_TEMP/verify" && mkdir -p "$RUNNER_TEMP/verify"
+          unzip -q "$RUNNER_TEMP/ipa"/*.ipa -d "$RUNNER_TEMP/verify"
+          APP=$(ls -d "$RUNNER_TEMP/verify/Payload/"*.app | head -1)
+          echo "=== signed entitlements for $APP ==="
+          codesign -d --entitlements :- "$APP" 2>/dev/null || true
+          if codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q "aps-environment"; then
+            echo "✅ aps-environment present — push entitlement shipped."
+          else
+            echo "❌ aps-environment MISSING — push would not work; failing the build."
+            exit 1
+          fi
 
       - name: Upload to TestFlight
         run: |
