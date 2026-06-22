@@ -118,19 +118,25 @@ jobs:
             "${AUTH[@]}"
           ls -la "$RUNNER_TEMP/ipa"
 
-      - name: Verify push entitlement is embedded (fail before upload if missing)
+      - name: Verify push prerequisites are in the IPA (fail before upload if missing)
         run: |
           rm -rf "$RUNNER_TEMP/verify" && mkdir -p "$RUNNER_TEMP/verify"
           unzip -q "$RUNNER_TEMP/ipa"/*.ipa -d "$RUNNER_TEMP/verify"
           APP=$(ls -d "$RUNNER_TEMP/verify/Payload/"*.app | head -1)
           echo "=== signed entitlements for $APP ==="
           codesign -d --entitlements :- "$APP" 2>/dev/null || true
+          fail=0
           if codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q "aps-environment"; then
             echo "✅ aps-environment present — push entitlement shipped."
           else
-            echo "❌ aps-environment MISSING — push would not work; failing the build."
-            exit 1
+            echo "❌ aps-environment MISSING — push would not work."; fail=1
           fi
+          if [ -f "$APP/GoogleService-Info.plist" ]; then
+            echo "✅ GoogleService-Info.plist bundled — Firebase can initialize."
+          else
+            echo "❌ GoogleService-Info.plist NOT bundled — Firebase/FCM won't init."; fail=1
+          fi
+          [ "$fail" = 0 ] || { echo "Failing before upload."; exit 1; }
 
       - name: Upload to TestFlight
         run: |

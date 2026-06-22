@@ -21,7 +21,7 @@ target  = project.targets.find { |t| t.name == 'Runner' } or abort('ERROR: Runne
 
 # Find (or create) the Runner group.
 runner_group = project.main_group.recursive_children.find do |n|
-  n.is_a?(Xcodeproj::Project::Group) && n.display_name == 'Runner'
+  n.is_a?(Xcodeproj::Project::PBXGroup) && n.display_name == 'Runner'
 end || project.main_group['Runner'] || project.main_group.new_group('Runner', 'Runner')
 
 # Add the file reference if absent.

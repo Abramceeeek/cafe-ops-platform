@@ -33,15 +33,9 @@ puts "Wrote #{ent_rel} (aps-environment=#{env})."
 project = Xcodeproj::Project.open(proj_path)
 target  = project.targets.find { |t| t.name == 'Runner' } or abort('ERROR: Runner target not found')
 
-# 2. Add the entitlements file reference to the Runner group (tidy; not required for signing).
-runner_group = project.main_group.recursive_children.find do |n|
-  n.is_a?(Xcodeproj::Project::Group) && n.display_name == 'Runner'
-end || project.main_group['Runner'] || project.main_group.new_group('Runner', 'Runner')
-unless runner_group.files.any? { |f| File.basename(f.path.to_s) == 'Runner.entitlements' }
-  runner_group.new_reference(ent_full)
-end
-
-# 3. Point every build configuration of the Runner target at the entitlements file.
+# 2. Point every build configuration of the Runner target at the entitlements file.
+#    The file only needs to exist on disk + be referenced by CODE_SIGN_ENTITLEMENTS;
+#    it does not need to be a project group member for signing to pick it up.
 target.build_configurations.each do |config|
   config.build_settings['CODE_SIGN_ENTITLEMENTS'] = ent_rel
 end
