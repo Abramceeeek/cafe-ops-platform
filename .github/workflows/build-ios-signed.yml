@@ -101,24 +101,21 @@ jobs:
           security create-keychain -p "$KCPASS" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KCPASS" "$KC"
-          # Make our keychain the default + in the search list, and import the Apple WWDR
-          # intermediates FIRST — fastlane cert verifies the new cert with `find-identity -v`,
-          # which reports 0 valid identities unless the chain (WWDR) is present in the keychain.
           security default-keychain -s "$KC"
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # Apple WWDR intermediates so the distribution cert's chain validates.
           for w in AppleWWDRCAG3 AppleWWDRCAG6; do
             curl -fsSL -o "$RUNNER_TEMP/$w.cer" "https://www.apple.com/certificateauthority/$w.cer" \
               && security import "$RUNNER_TEMP/$w.cer" -k "$KC" || true
           done
-          # The IOS_DIST_CERT_P12 secret had no private key, so mint a managed Apple
-          # Distribution certificate (fastlane generates the private key locally).
-          gem install fastlane --quiet --no-document
-          fastlane cert --api_key_path "$RUNNER_TEMP/asc_key.json" \
-            --keychain_path "$KC" --keychain_password "$KCPASS" --output_path "$RUNNER_TEMP/certs"
+          # Import the persistent distribution certificate (cert + private key) from secrets.
+          # This reuses one cert every build — no more hitting Apple's cert limit.
+          echo "$P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$P12_PASS" -A -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null 2>&1 || true
           echo "--- identities in keychain ---"; security find-identity -v -p codesigning "$KC" || true
           IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep -oE '"[^"]+"' | head -1 | tr -d '"')
-          [ -n "$IDENTITY" ] || { echo "ERROR: fastlane cert produced no signing identity"; exit 1; }
+          [ -n "$IDENTITY" ] || { echo "ERROR: no valid signing identity from IOS_DIST_CERT_P12"; exit 1; }
           echo "Signing identity: $IDENTITY"
           # 3. mint a fresh App Store provisioning profile (Admin key); includes push
           #    because the App ID has Push Notifications enabled.
