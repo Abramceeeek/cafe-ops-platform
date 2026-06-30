@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_constants/shared_constants.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/theme_mode_provider.dart';
+import '../../core/auth_provider.dart';
 
 class AccountProfile {
   final String name;
@@ -14,7 +15,9 @@ class AccountProfile {
 
 final accountProfileProvider = FutureProvider<AccountProfile>((ref) async {
   final sb = ref.watch(supabaseProvider);
-  final user = sb.auth.currentUser;
+  // Watch the auth user so this refetches on account switch (sign out / in),
+  // instead of caching the previous account's profile.
+  final user = ref.watch(currentUserProvider);
   final p = await sb
       .from('profiles')
       .select('full_name, role, shops(name)')

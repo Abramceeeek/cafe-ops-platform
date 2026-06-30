@@ -1,0 +1,206 @@
+name: build-ios-signed
+
+# Builds BOTH Flutter apps SIGNED and uploads to TestFlight using ONLY an
+# App Store Connect API key — NO Mac, NO .p12 certificate, NO .mobileprovision.
+# Xcode "cloud" automatic signing (-allowProvisioningUpdates + the API key)
+# creates the distribution certificate + provisioning profile on Apple's side.
+#
+# Required secrets: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (base64 of the .p8),
+#                   IOS_TEAM_ID, SUPABASE_URL, SUPABASE_ANON_KEY.
+# Prereq: the two app records must exist in App Store Connect (com.hubsync.hub,
+#         com.hubsync.shop) or the TestFlight upload step fails.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/ios-signed]
+
+permissions:
+  contents: read
+
+jobs:
+  ios-signed:
+    name: ios-signed
+    runs-on: macos-26   # Xcode 26 / iOS 26 SDK (Apple requires it for uploads as of 2026-06-16)
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [shop_app, hub_app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable   # newest Xcode on the image (26.x → iOS 26 SDK)
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate platform files (ios + android so launcher-icons can run)
+        working-directory: apps/${{ matrix.app }}
+        run: flutter create --platforms=ios,android --org com.hubsync .
+
+      - name: Configure iOS (bundle id, deployment target, Firebase plist)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
+          NEW="com.hubsync.${SHORT}"
+          echo "bundle id -> $NEW"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = ${NEW};/g" ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' "s/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g" ios/Runner.xcodeproj/project.pbxproj
+          if [ -f ios/Podfile ]; then sed -i '' "s/^# *platform :ios.*/platform :ios, '13.0'/" ios/Podfile; fi
+          cp "../../firebase/GoogleService-Info-${SHORT}.plist" ios/Runner/GoogleService-Info.plist
+
+      - name: Add GoogleService-Info.plist to Runner target
+        working-directory: apps/${{ matrix.app }}
+        continue-on-error: true   # runtime-only (Firebase); don't block the signing test
+        run: |
+          gem install xcodeproj --quiet --no-document
+          ruby ../../scripts/add_plist_to_xcode.rb . GoogleService-Info
+
+      - name: Add Push Notifications entitlement (aps-environment) + background mode
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          gem install xcodeproj --quiet --no-document
+          # aps-environment=production + CODE_SIGN_ENTITLEMENTS on the Runner target.
+          # Without this the signed build has no push entitlement and APNs/FCM never deliver.
+          ruby ../../scripts/add_push_entitlement.rb . production
+          # remote-notification background mode (Firebase background message handler).
+          PL=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PL" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string remote-notification" "$PL" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$PL" || true
+
+      - name: Build Flutter (no codesign — primes the Flutter framework + pods)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons   # generate the iOS app icon from assets/brand/app_icon.png
+          flutter build ios --release --no-codesign \
+            --build-number=${{ github.run_number }} \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Prepare distribution signing (keychain + App Store profile)
+        working-directory: apps/${{ matrix.app }}
+        env:
+          P12_B64: ${{ secrets.IOS_DIST_CERT_P12 }}
+          P12_PASS: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          set -e
+          SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"; BUNDLE="com.hubsync.${SHORT}"
+          # 1. App Store Connect API key (fastlane sigh uses it to mint the profile)
+          cat > "$RUNNER_TEMP/asc_key.json" <<EOF
+          {"key_id":"$ASC_KEY_ID","issuer_id":"$ASC_ISSUER_ID","key":"$ASC_KEY_P8","is_key_content_base64":true,"in_house":false}
+          EOF
+          # 2. import the distribution certificate into a dedicated keychain
+          KC="$RUNNER_TEMP/app-signing.keychain-db"; KCPASS=ci-temp
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          security default-keychain -s "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # Apple WWDR intermediates so the distribution cert's chain validates.
+          for w in AppleWWDRCAG3 AppleWWDRCAG6; do
+            curl -fsSL -o "$RUNNER_TEMP/$w.cer" "https://www.apple.com/certificateauthority/$w.cer" \
+              && security import "$RUNNER_TEMP/$w.cer" -k "$KC" || true
+          done
+          # Import the persistent distribution certificate (cert + private key) from secrets.
+          # This reuses one cert every build — no more hitting Apple's cert limit.
+          echo "$P12_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$P12_PASS" -A -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null 2>&1 || true
+          echo "--- identities in keychain ---"; security find-identity -v -p codesigning "$KC" || true
+          IDENTITY=$(security find-identity -v -p codesigning "$KC" | grep -oE '"[^"]+"' | head -1 | tr -d '"')
+          [ -n "$IDENTITY" ] || { echo "ERROR: no valid signing identity from IOS_DIST_CERT_P12"; exit 1; }
+          echo "Signing identity: $IDENTITY"
+          # 3. mint a fresh App Store provisioning profile (Admin key); includes push
+          #    because the App ID has Push Notifications enabled.
+          fastlane sigh --api_key_path "$RUNNER_TEMP/asc_key.json" \
+            --app_identifier "$BUNDLE" --platform ios --output_path "$RUNNER_TEMP" --force
+          PROF=$(ls -t "$RUNNER_TEMP"/*.mobileprovision | head -1)
+          security cms -D -i "$PROF" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_NAME=$(plutil -extract Name raw -o - "$RUNNER_TEMP/profile.plist")
+          PROFILE_UUID=$(plutil -extract UUID raw -o - "$RUNNER_TEMP/profile.plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROF" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "Provisioning profile: $PROFILE_NAME ($PROFILE_UUID)"
+          # 4. scope manual signing to the Runner target only
+          gem install xcodeproj --quiet --no-document
+          ruby ../../scripts/set_manual_signing.rb . "$PROFILE_NAME" "$TEAM" "$IDENTITY"
+          # 5. ExportOptions for manual App Store signing
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingCertificate</key><string>$IDENTITY</string>
+            <key>provisioningProfiles</key><dict><key>$BUNDLE</key><string>$PROFILE_NAME</string></dict>
+            <key>uploadSymbols</key><false/>
+          </dict></plist>
+          EOF
+          # hand values to the archive step
+          { echo "SIGN_KEYCHAIN=$KC"; echo "SIGN_IDENTITY=$IDENTITY"; } >> "$GITHUB_ENV"
+
+      - name: Archive + export App Store IPA (manual distribution signing)
+        working-directory: apps/${{ matrix.app }}/ios
+        run: |
+          retry() { for i in 1 2 3; do "$@" && return 0; echo "attempt $i failed; retry in 20s"; sleep 20; done; return 1; }
+          # Distribution-sign the archive with the imported cert. CODE_SIGN_IDENTITY +
+          # Manual apply to all targets (frameworks sign with the cert, no profile); the
+          # Runner target additionally carries the App Store profile (set on the project).
+          retry xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+            -sdk iphoneos -configuration Release \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=${{ secrets.IOS_TEAM_ID }} \
+            CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $SIGN_KEYCHAIN" \
+            archive
+          retry xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ipa" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          ls -la "$RUNNER_TEMP/ipa"
+
+      - name: Verify push prerequisites are in the IPA (fail before upload if missing)
+        run: |
+          rm -rf "$RUNNER_TEMP/verify" && mkdir -p "$RUNNER_TEMP/verify"
+          unzip -q "$RUNNER_TEMP/ipa"/*.ipa -d "$RUNNER_TEMP/verify"
+          APP=$(ls -d "$RUNNER_TEMP/verify/Payload/"*.app | head -1)
+          echo "=== signed entitlements for $APP ==="
+          codesign -d --entitlements :- "$APP" 2>/dev/null || true
+          fail=0
+          if codesign -d --entitlements :- "$APP" 2>/dev/null | grep -q "aps-environment"; then
+            echo "✅ aps-environment present — push entitlement shipped."
+          else
+            echo "❌ aps-environment MISSING — push would not work."; fail=1
+          fi
+          if [ -f "$APP/GoogleService-Info.plist" ]; then
+            echo "✅ GoogleService-Info.plist bundled — Firebase can initialize."
+          else
+            echo "❌ GoogleService-Info.plist NOT bundled — Firebase/FCM won't init."; fail=1
+          fi
+          [ "$fail" = 0 ] || { echo "Failing before upload."; exit 1; }
+
+      - name: Upload to TestFlight
+        run: |
+          gem install fastlane --quiet --no-document
+          IPA=$(ls "$RUNNER_TEMP/ipa"/*.ipa | head -1)
+          echo "Uploading $IPA"
+          cat > "$RUNNER_TEMP/asc_key.json" <<EOF
+          {"key_id":"${{ secrets.ASC_KEY_ID }}","issuer_id":"${{ secrets.ASC_ISSUER_ID }}","key":"${{ secrets.ASC_KEY_P8 }}","is_key_content_base64":true,"in_house":false}
+          EOF
+          fastlane pilot upload \
+            --ipa "$IPA" \
+            --api_key_path "$RUNNER_TEMP/asc_key.json" \
+            --skip_waiting_for_build_processing true \
+            --skip_submission true
+
+      - name: Result
+        run: echo "✅ ${{ matrix.app }} signed + uploaded to TestFlight."

@@ -34,9 +34,9 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate android platform files
+      - name: Generate platform files (ios scaffolded too so flutter_launcher_icons ios:true won't crash)
         working-directory: apps/${{ matrix.app }}
-        run: flutter create --platforms=android --org com.hubsync .
+        run: flutter create --platforms=ios,android --org com.hubsync .
       - name: Configure Firebase (Android)
         working-directory: apps/${{ matrix.app }}
         run: |
