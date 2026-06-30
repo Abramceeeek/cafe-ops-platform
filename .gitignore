@@ -162,3 +162,7 @@ build/
 supabase/.branches
 supabase/.temp
 **/.env.local
+
+# scratch/run-watch temp files
+.tmp_*
+existing_icon_tmp.png
