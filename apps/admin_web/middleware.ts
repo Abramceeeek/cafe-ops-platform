@@ -45,11 +45,13 @@ export async function middleware(request: NextRequest) {
   }
 
   const isLogin = request.nextUrl.pathname.startsWith("/login");
-  // /privacy and /support are public App Store pages — reachable without a session.
+  // /privacy, /support, /download are public pages — reachable without a session
+  // (App Store URLs + the TestFlight install page shared on abdurakhmonbek.com).
   const isPublic =
     isLogin ||
     request.nextUrl.pathname.startsWith("/privacy") ||
-    request.nextUrl.pathname.startsWith("/support");
+    request.nextUrl.pathname.startsWith("/support") ||
+    request.nextUrl.pathname.startsWith("/download");
 
   if ((!user || !isActive) && !isPublic) {
     const redirect = request.nextUrl.clone();
