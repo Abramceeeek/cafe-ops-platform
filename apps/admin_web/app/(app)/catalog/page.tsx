@@ -53,6 +53,8 @@ interface Product {
   is_available: boolean;
   category_id: string;
   price: number | null;
+  archived_at: string | null;
+  unavailable_note: string | null;
 }
 
 export default function CatalogPage() {
@@ -63,6 +65,9 @@ export default function CatalogPage() {
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
   const [nameEdits, setNameEdits] = useState<Record<string, string>>({});
+  const [unitEdits, setUnitEdits] = useState<Record<string, string>>({});
+  const [leadEdits, setLeadEdits] = useState<Record<string, string>>({});
+  const [noteEdits, setNoteEdits] = useState<Record<string, string>>({});
 
   // forms
   const [catName, setCatName] = useState("");
@@ -86,7 +91,7 @@ export default function CatalogPage() {
       supabase.from("product_categories").select("id,name,assigned_role").order("display_order"),
       supabase
         .from("products")
-        .select("id,name,unit,lead_time_hours,is_available,category_id,price")
+        .select("id,name,unit,lead_time_hours,is_available,category_id,price,archived_at,unavailable_note")
         .order("name"),
     ]);
     setCategories(cats ?? []);
@@ -158,6 +163,63 @@ export default function CatalogPage() {
     await load();
   }
 
+  async function saveUnit(p: Product) {
+    const raw = unitEdits[p.id];
+    if (raw == null) return;
+    const val = raw.trim();
+    const clear = () => setUnitEdits((m) => { const n = { ...m }; delete n[p.id]; return n; });
+    if (val === "") return toast.error("Unit can't be empty");
+    if (val === p.unit) return clear();
+    const { error } = await createClient().from("products").update({ unit: val }).eq("id", p.id);
+    if (error) return toast.error(error.message);
+    toast.success(`${p.name} now measured in ${val}`);
+    clear();
+    await load();
+  }
+
+  async function saveLead(p: Product) {
+    const raw = leadEdits[p.id];
+    if (raw == null) return;
+    const val = parseInt(raw, 10);
+    const clear = () => setLeadEdits((m) => { const n = { ...m }; delete n[p.id]; return n; });
+    if (isNaN(val) || val < 0) return toast.error("Lead time must be 0 or more hours");
+    if (val === p.lead_time_hours) return clear();
+    const { error } = await createClient().from("products").update({ lead_time_hours: val }).eq("id", p.id);
+    if (error) return toast.error(error.message);
+    toast.success(`${p.name} lead time set to ${val}h`);
+    clear();
+    await load();
+  }
+
+  async function saveNote(p: Product) {
+    const raw = noteEdits[p.id];
+    if (raw == null) return;
+    const val = raw.trim();
+    const clear = () => setNoteEdits((m) => { const n = { ...m }; delete n[p.id]; return n; });
+    if (val === (p.unavailable_note ?? "")) return clear();
+    const { error } = await createClient()
+      .from("products")
+      .update({ unavailable_note: val === "" ? null : val })
+      .eq("id", p.id);
+    if (error) return toast.error(error.message);
+    toast.success(`${p.name} note saved`);
+    clear();
+    await load();
+  }
+
+  // Moving a product between zones. RLS only lets a specialist land it in a
+  // category assigned to their own role, and the dropdown offers no others.
+  async function saveCategory(p: Product, categoryId: string) {
+    if (categoryId === p.category_id) return;
+    const { error } = await createClient()
+      .from("products")
+      .update({ category_id: categoryId })
+      .eq("id", p.id);
+    if (error) return toast.error(error.message);
+    toast.success(`${p.name} moved to ${categories.find((c) => c.id === categoryId)?.name ?? "category"}`);
+    await load();
+  }
+
   async function toggle86(p: Product) {
     if (p.is_available && !confirm(`Are you sure you want to mark ${p.name} as out of stock? It will be unavailable to order.`)) return;
     const { error } = await createClient()
@@ -169,11 +231,39 @@ export default function CatalogPage() {
     await load();
   }
 
+  // Products that have ever been ordered can't be removed from the table (order
+  // history references them), so archive_product deletes the never-ordered ones
+  // outright and archives the rest — clearing them out of standing orders and
+  // templates either way. Order history is never touched.
   async function deleteProduct(p: Product) {
-    if (!confirm(`Are you sure you want to delete ${p.name}?`)) return;
-    const { error } = await createClient().from("products").delete().eq("id", p.id);
+    if (
+      !confirm(
+        `Delete ${p.name}? It disappears from the catalog and from every shop's ordering list. Past orders keep it.`,
+      )
+    )
+      return;
+    const { data, error } = await createClient().rpc("archive_product", { p_product_id: p.id });
     if (error) return toast.error(error.message);
-    toast.success(`${p.name} deleted`);
+    const res = (data ?? {}) as {
+      action?: string;
+      order_items?: number;
+      standing_orders_cleared?: number;
+    };
+    const cleared = res.standing_orders_cleared
+      ? `, removed from ${res.standing_orders_cleared} standing-order line${res.standing_orders_cleared === 1 ? "" : "s"}`
+      : "";
+    toast.success(
+      res.action === "deleted"
+        ? `${p.name} deleted${cleared}`
+        : `${p.name} archived — kept on ${res.order_items} past order line${res.order_items === 1 ? "" : "s"}${cleared}`,
+    );
+    await load();
+  }
+
+  async function restoreProduct(p: Product) {
+    const { error } = await createClient().rpc("restore_product", { p_product_id: p.id });
+    if (error) return toast.error(error.message);
+    toast.success(`${p.name} restored — available to order again`);
     await load();
   }
 
@@ -301,7 +391,9 @@ export default function CatalogPage() {
       </div>
 
       {visibleCategories.map((c) => {
-        const prods = products.filter((p) => p.category_id === c.id);
+        const inCategory = products.filter((p) => p.category_id === c.id);
+        const prods = inCategory.filter((p) => !p.archived_at);
+        const archived = inCategory.filter((p) => p.archived_at);
         return (
           <Card key={c.id}>
             <CardHeader className="pb-0">
@@ -311,14 +403,16 @@ export default function CatalogPage() {
               </div>
               <p className="text-xs text-muted-foreground">{prods.length} products</p>
             </CardHeader>
-            <CardContent className="pt-4">
+            <CardContent className="space-y-4 overflow-x-auto pt-4">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
+                    <TableHead>Category</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>Lead (h)</TableHead>
                     <TableHead>Price (£)</TableHead>
+                    <TableHead>Out-of-stock note</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -335,8 +429,41 @@ export default function CatalogPage() {
                           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                         />
                       </TableCell>
-                      <TableCell>{p.unit}</TableCell>
-                      <TableCell className="tabular-nums">{p.lead_time_hours}</TableCell>
+                      <TableCell>
+                        <Select value={p.category_id} onValueChange={(v) => void saveCategory(p, v)}>
+                          <SelectTrigger className="h-8 w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {visibleCategories.map((opt) => (
+                              <SelectItem key={opt.id} value={opt.id}>
+                                {opt.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          className="h-8 w-20"
+                          value={unitEdits[p.id] ?? p.unit}
+                          onChange={(e) => setUnitEdits((m) => ({ ...m, [p.id]: e.target.value }))}
+                          onBlur={() => { if (unitEdits[p.id] != null) void saveUnit(p); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          inputMode="numeric"
+                          className="h-8 w-16 tabular-nums"
+                          value={leadEdits[p.id] ?? String(p.lead_time_hours)}
+                          onChange={(e) =>
+                            setLeadEdits((m) => ({ ...m, [p.id]: e.target.value.replace(/[^0-9]/g, "") }))
+                          }
+                          onBlur={() => { if (leadEdits[p.id] != null) void saveLead(p); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                        />
+                      </TableCell>
                       <TableCell>
                         <Input
                           inputMode="decimal"
@@ -347,6 +474,16 @@ export default function CatalogPage() {
                             setPriceEdits((m) => ({ ...m, [p.id]: e.target.value.replace(/[^0-9.]/g, "") }))
                           }
                           onBlur={() => { if (priceEdits[p.id] != null) void savePrice(p); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          placeholder="Why it’s off…"
+                          className="h-8 w-40"
+                          value={noteEdits[p.id] ?? (p.unavailable_note ?? "")}
+                          onChange={(e) => setNoteEdits((m) => ({ ...m, [p.id]: e.target.value }))}
+                          onBlur={() => { if (noteEdits[p.id] != null) void saveNote(p); }}
                           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
                         />
                       </TableCell>
@@ -369,13 +506,39 @@ export default function CatalogPage() {
                   ))}
                   {prods.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
                         No products in this category.
                       </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
+
+              {archived.length > 0 && (
+                <details className="rounded-md border px-3 py-2">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Archived ({archived.length})
+                  </summary>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Removed from ordering but kept on past orders. Restore puts one back on the list.
+                  </p>
+                  <ul className="mt-2 divide-y">
+                    {archived.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between py-2">
+                        <span className="text-sm">
+                          {p.name}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {p.unit} · {p.price != null ? `£${p.price}` : "no price"} · {p.lead_time_hours}h
+                          </span>
+                        </span>
+                        <Button variant="outline" size="sm" onClick={() => void restoreProduct(p)}>
+                          Restore
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </CardContent>
           </Card>
         );

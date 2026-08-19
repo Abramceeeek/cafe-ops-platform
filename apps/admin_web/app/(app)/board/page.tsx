@@ -9,6 +9,7 @@ import { updateOrderStatus } from "@/app/actions/orders";
 interface Item {
   quantity: number;
   unit: string;
+  product_name: string | null;
   products: { name: string; product_categories: { name: string; assigned_role: string } | null } | null;
 }
 interface Row {
@@ -91,7 +92,7 @@ export default function BoardPage() {
       .select(
         `id, status, requested_delivery_date, is_standing,
          shops ( name ),
-         order_items ( quantity, unit, products ( name, product_categories ( name, assigned_role ) ) )`,
+         order_items ( quantity, unit, product_name, products ( name, product_categories ( name, assigned_role ) ) )`,
       )
       .in("status", STATUSES)
       .order("requested_delivery_date", { ascending: true });
@@ -127,7 +128,7 @@ export default function BoardPage() {
       for (const r of orders) {
         for (const i of mineItems(r)) {
           const catName = i.products?.product_categories?.name ?? "";
-          const name = i.products?.name ?? "Item";
+          const name = i.product_name ?? i.products?.name ?? "Item";
           const key = `${name}|${i.unit}`;
           const ex = merged.get(key);
           if (ex) ex.qty += Number(i.quantity);

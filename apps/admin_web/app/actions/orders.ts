@@ -119,7 +119,7 @@ export async function submitOrder(payload: Payload) {
   const { data: dbProducts, error: dbErr } = await admin
     .from("products")
     .select(`
-      id, category_id, lead_time_hours, unit,
+      id, category_id, lead_time_hours, unit, name, is_available, archived_at,
       product_categories ( assigned_role ),
       modifier_groups ( id, is_required, name )
     `)
@@ -140,6 +140,16 @@ export async function submitOrder(payload: Payload) {
       return { error: "validation_failed", details: [`Product not found: ${item.product_id}`] };
     }
     
+    // Archived products are gone from the catalog but still readable, so the
+    // check that used to be implicit in RLS lives here now (submit_request and
+    // submit_request_atomic repeat it server-side).
+    if (real.archived_at) {
+      return { error: "validation_failed", details: [`${real.name} is no longer on the catalog.`] };
+    }
+    if (!real.is_available) {
+      return { error: "validation_failed", details: [`${real.name} is out of stock.`] };
+    }
+
     const assignedRole = (real.product_categories as { assigned_role?: string } | null)?.assigned_role;
     if (profile.role === "foh_manager") {
       if (assignedRole !== "bread_baker") {
@@ -508,7 +518,7 @@ async function generateReceipt(admin: any, orderId: string) {
       `id, shop_id, requested_delivery_date, delivered_at, status, receipt_id,
        shops ( name ),
        courier:profiles!orders_assigned_courier_fkey ( full_name ),
-       order_items ( quantity, unit, unit_cost, products ( name ), order_item_modifiers ( modifier_option_name ) )`,
+       order_items ( quantity, unit, unit_cost, product_name, products ( name ), order_item_modifiers ( modifier_option_name ) )`,
     )
     .eq("id", orderId)
     .single();
@@ -518,7 +528,7 @@ async function generateReceipt(admin: any, orderId: string) {
   let hasCosts = false;
   const lines = (order.order_items as any[]).map((i) => {
     const mods = (i.order_item_modifiers ?? []).map((m: any) => m.modifier_option_name);
-    const desc = `${i.products?.name ?? "Item"}${mods.length ? ` (${mods.join(", ")})` : ""}`;
+    const desc = `${i.product_name ?? i.products?.name ?? "Item"}${mods.length ? ` (${mods.join(", ")})` : ""}`;
     let amount = "—";
     if (i.unit_cost != null) {
       const lt = Number(i.unit_cost) * Number(i.quantity);

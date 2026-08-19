@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/client";
 interface Item {
   quantity: number;
   unit: string;
+  product_name: string | null;
   products: { name: string; product_categories: { name: string; assigned_role: string } | null } | null;
 }
 interface Row {
@@ -44,7 +45,7 @@ function fmtDate(d: string) {
 
 function mergeLines(map: Map<string, Line>, items: Item[]) {
   for (const i of items) {
-    const name = i.products?.name ?? "Item";
+    const name = i.product_name ?? i.products?.name ?? "Item";
     const catName = i.products?.product_categories?.name ?? "";
     const key = `${name}|${i.unit}`;
     const ex = map.get(key);
@@ -88,7 +89,7 @@ export default function PrintPage() {
         .select(
           `id, status,
            shops ( name, address ),
-           order_items ( quantity, unit, products ( name, product_categories ( name, assigned_role ) ) )`,
+           order_items ( quantity, unit, product_name, products ( name, product_categories ( name, assigned_role ) ) )`,
         )
         .eq("requested_delivery_date", d)
         .in("status", STATUSES);

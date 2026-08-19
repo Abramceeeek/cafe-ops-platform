@@ -11,6 +11,7 @@ interface Item {
   quantity: number;
   unit: string;
   custom_note: string | null;
+  product_name: string | null;
   products: { name: string; price: number | null; product_categories: { name: string; assigned_role: string } | null } | null;
   order_item_modifiers: { modifier_group_name: string; modifier_option_name: string }[];
 }
@@ -63,6 +64,7 @@ export default function InboxPage() {
          shops ( name ),
          order_items (
            id, quantity, unit, custom_note,
+           product_name,
            products ( name, price, product_categories ( name, assigned_role ) ),
            order_item_modifiers ( modifier_group_name, modifier_option_name )
          )`,
@@ -217,7 +219,7 @@ export default function InboxPage() {
                     <div key={i.id} className="text-[13px]">
                       <div className="flex items-start justify-between gap-2">
                         <span className={"min-w-0 " + (isRemoved ? "line-through opacity-50" : "")}>
-                          <span className="font-semibold">{i.products?.name ?? "Item"}</span>
+                          <span className="font-semibold">{i.product_name ?? i.products?.name ?? "Item"}</span>
                           {i.order_item_modifiers.length > 0 && (
                             <span className="text-muted-foreground">
                               {" "}· {i.order_item_modifiers.map((m) => m.modifier_option_name).join(" · ")}

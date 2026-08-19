@@ -11,6 +11,8 @@ class CatProduct {
   final num? price;
   final bool isAvailable;
   final String categoryId;
+  final bool isArchived;
+  final String? unavailableNote;
   CatProduct({
     required this.id,
     required this.name,
@@ -19,6 +21,8 @@ class CatProduct {
     required this.price,
     required this.isAvailable,
     required this.categoryId,
+    required this.isArchived,
+    required this.unavailableNote,
   });
 }
 
@@ -26,7 +30,8 @@ class CatCategory {
   final String id;
   final String name;
   final List<CatProduct> products;
-  CatCategory(this.id, this.name, this.products);
+  final List<CatProduct> archived;
+  CatCategory(this.id, this.name, this.products, this.archived);
 }
 
 /// Categories assigned to the current specialist + their products. RLS scopes
@@ -37,7 +42,7 @@ final catalogManageProvider = FutureProvider<List<CatCategory>>((ref) async {
   final cats = await sb.from('product_categories').select('id, name, assigned_role').order('display_order');
   final prods = await sb
       .from('products')
-      .select('id, name, unit, lead_time_hours, is_available, category_id, price')
+      .select('id, name, unit, lead_time_hours, is_available, category_id, price, archived_at, unavailable_note')
       .order('name');
   final mine = (cats as List).where((c) => c['assigned_role'] == role).toList();
   return mine.map((c) {
@@ -51,9 +56,16 @@ final catalogManageProvider = FutureProvider<List<CatCategory>>((ref) async {
         price: p['price'] as num?,
         isAvailable: p['is_available'] == true,
         categoryId: cid,
+        isArchived: p['archived_at'] != null,
+        unavailableNote: p['unavailable_note'] as String?,
       );
     }).toList();
-    return CatCategory(cid, (c['name'] ?? '') as String, items);
+    return CatCategory(
+      cid,
+      (c['name'] ?? '') as String,
+      items.where((p) => !p.isArchived).toList(),
+      items.where((p) => p.isArchived).toList(),
+    );
   }).toList();
 });
 
@@ -75,12 +87,17 @@ class CatalogScreen extends ConsumerWidget {
     }
   }
 
+  /// A product that has ever been ordered cannot be removed from the table (order
+  /// history references it), so archive_product deletes the never-ordered ones and
+  /// archives the rest, clearing both out of standing orders and templates. Order
+  /// history is never touched.
   Future<void> _delete(BuildContext context, WidgetRef ref, CatProduct p) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete product?'),
-        content: Text('Delete "${p.name}"?'),
+        content: Text('"${p.name}" disappears from the catalog and from every shop\'s '
+            'ordering list. Past orders keep it.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
@@ -89,27 +106,49 @@ class CatalogScreen extends ConsumerWidget {
     );
     if (ok != true) return;
     try {
-      await ref.read(supabaseProvider).from('products').delete().eq('id', p.id);
+      final res = await ref.read(supabaseProvider).rpc('archive_product', params: {'p_product_id': p.id});
       if (!context.mounted) return;
       ref.invalidate(catalogManageProvider);
-      _toast(context, '${p.name} deleted');
+      final map = (res as Map?) ?? const {};
+      final orders = (map['order_items'] ?? 0) as num;
+      _toast(
+        context,
+        map['action'] == 'deleted'
+            ? '${p.name} deleted'
+            : '${p.name} archived — kept on $orders past order line${orders == 1 ? '' : 's'}',
+      );
     } catch (e) {
       if (context.mounted) _toast(context, 'Failed: $e');
     }
   }
 
-  Future<void> _edit(BuildContext context, WidgetRef ref, CatProduct p) async {
+  Future<void> _restore(BuildContext context, WidgetRef ref, CatProduct p) async {
+    try {
+      await ref.read(supabaseProvider).rpc('restore_product', params: {'p_product_id': p.id});
+      if (!context.mounted) return;
+      ref.invalidate(catalogManageProvider);
+      _toast(context, '${p.name} restored — available to order again');
+    } catch (e) {
+      if (context.mounted) _toast(context, 'Failed: $e');
+    }
+  }
+
+  Future<void> _edit(BuildContext context, WidgetRef ref, CatProduct p, List<CatCategory> cats) async {
     final values = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => _ProductDialog(title: 'Edit product', initial: p),
+      builder: (_) => _ProductDialog(title: 'Edit product', initial: p, categories: cats),
     );
     if (values == null) return;
     try {
+      // Only the categories assigned to this specialist are offered, and the
+      // products UPDATE policy (0030) refuses anything else anyway.
       await ref.read(supabaseProvider).from('products').update({
         'name': values['name'],
         'unit': values['unit'],
         'lead_time_hours': values['lead'],
         'price': values['price'],
+        'category_id': values['category_id'],
+        'unavailable_note': values['note'],
       }).eq('id', p.id);
       if (!context.mounted) return;
       ref.invalidate(catalogManageProvider);
@@ -136,6 +175,7 @@ class CatalogScreen extends ConsumerWidget {
         'unit': values['unit'],
         'lead_time_hours': values['lead'],
         'price': values['price'],
+        'unavailable_note': values['note'],
       });
       if (!context.mounted) return;
       ref.invalidate(catalogManageProvider);
@@ -197,7 +237,7 @@ class CatalogScreen extends ConsumerWidget {
                               ),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (v) {
-                                  if (v == 'edit') _edit(context, ref, p);
+                                  if (v == 'edit') _edit(context, ref, p, cats);
                                   if (v == '86') _toggle86(context, ref, p);
                                   if (v == 'delete') _delete(context, ref, p);
                                 },
@@ -207,6 +247,28 @@ class CatalogScreen extends ConsumerWidget {
                                   const PopupMenuItem(value: 'delete', child: Text('Delete')),
                                 ],
                               ),
+                            ),
+                          if (c.archived.isNotEmpty)
+                            ExpansionTile(
+                              tilePadding: EdgeInsets.zero,
+                              title: Text('Archived (${c.archived.length})',
+                                  style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                              subtitle: const Text('Off the ordering list, still on past orders.',
+                                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+                              children: [
+                                for (final p in c.archived)
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(p.name),
+                                    subtitle: Text(
+                                      '${p.price != null ? '£${p.price!.toStringAsFixed(2)}' : 'no price'} · per ${p.unit} · ${p.leadTimeHours}h',
+                                    ),
+                                    trailing: TextButton(
+                                      onPressed: () => _restore(context, ref, p),
+                                      child: const Text('Restore'),
+                                    ),
+                                  ),
+                              ],
                             ),
                         ],
                       ),
@@ -221,7 +283,7 @@ class CatalogScreen extends ConsumerWidget {
   }
 }
 
-/// Add/Edit product form. Returns {name, unit, lead, price, category_id?} or null.
+/// Add/Edit product form. Returns {name, unit, lead, price, note, category_id?} or null.
 class _ProductDialog extends StatefulWidget {
   final String title;
   final CatProduct? initial;
@@ -236,6 +298,7 @@ class _ProductDialogState extends State<_ProductDialog> {
   late final TextEditingController _unit;
   late final TextEditingController _lead;
   late final TextEditingController _price;
+  late final TextEditingController _note;
   String? _categoryId;
 
   @override
@@ -246,7 +309,9 @@ class _ProductDialogState extends State<_ProductDialog> {
     _unit = TextEditingController(text: p?.unit ?? 'kg');
     _lead = TextEditingController(text: (p?.leadTimeHours ?? 24).toString());
     _price = TextEditingController(text: p?.price != null ? p!.price.toString() : '');
-    _categoryId = widget.categories != null && widget.categories!.isNotEmpty ? widget.categories!.first.id : null;
+    _note = TextEditingController(text: p?.unavailableNote ?? '');
+    _categoryId = p?.categoryId ??
+        (widget.categories != null && widget.categories!.isNotEmpty ? widget.categories!.first.id : null);
   }
 
   @override
@@ -255,6 +320,7 @@ class _ProductDialogState extends State<_ProductDialog> {
     _unit.dispose();
     _lead.dispose();
     _price.dispose();
+    _note.dispose();
     super.dispose();
   }
 
@@ -270,6 +336,7 @@ class _ProductDialogState extends State<_ProductDialog> {
       'unit': _unit.text.trim().isEmpty ? 'unit' : _unit.text.trim(),
       'lead': int.tryParse(_lead.text.trim()) ?? 24,
       'price': priceText.isEmpty ? null : num.tryParse(priceText),
+      'note': _note.text.trim().isEmpty ? null : _note.text.trim(),
       if (widget.categories != null) 'category_id': _categoryId,
     });
   }
@@ -302,6 +369,13 @@ class _ProductDialogState extends State<_ProductDialog> {
               controller: _price,
               decoration: const InputDecoration(labelText: 'Price (£)', hintText: '0.00'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            ),
+            TextField(
+              controller: _note,
+              decoration: const InputDecoration(
+                labelText: 'Out-of-stock note',
+                hintText: 'Shown to shops when this is off',
+              ),
             ),
           ],
         ),

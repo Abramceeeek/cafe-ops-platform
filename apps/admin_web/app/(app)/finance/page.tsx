@@ -22,7 +22,7 @@ interface Row {
   requested_delivery_date: string;
   delivered_at: string | null;
   shops: { name: string } | null;
-  order_items: { quantity: number; unit_cost: number | null; products: { name: string } | null }[];
+  order_items: { quantity: number; unit_cost: number | null; product_name: string | null; products: { name: string } | null }[];
 }
 
 interface Statement {
@@ -64,7 +64,7 @@ export default function FinancePage() {
       .from("orders")
       .select(
         `id, requested_delivery_date, delivered_at,
-         shops ( name ), order_items ( quantity, unit_cost, products ( name ) )`,
+         shops ( name ), order_items ( quantity, unit_cost, product_name, products ( name ) )`,
       )
       .eq("status", "delivered")
       .order("delivered_at", { ascending: false });
@@ -147,7 +147,7 @@ export default function FinancePage() {
                     <TableCell className="font-medium">{r.shops?.name ?? "—"}</TableCell>
                     <TableCell>{r.delivered_at?.slice(0, 10) ?? "—"}</TableCell>
                     <TableCell className="max-w-md truncate text-muted-foreground">
-                      {r.order_items.map((i) => `${i.products?.name} ×${i.quantity}`).join(", ")}
+                      {r.order_items.map((i) => `${i.product_name ?? i.products?.name} ×${i.quantity}`).join(", ")}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {t == null ? "—" : `£${t.toFixed(2)}`}

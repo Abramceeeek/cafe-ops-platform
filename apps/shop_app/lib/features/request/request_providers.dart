@@ -44,6 +44,7 @@ final catalogProvider = FutureProvider<List<Product>>((ref) async {
           'product_categories(name,assigned_role),'
           'modifier_groups(id,name,is_required,display_order,modifier_options(id,name,display_order))')
       .eq('is_available', true)
+      .isFilter('archived_at', null)
       .order('name');
   return (rows as List).map((r) {
     final cat = r['product_categories'] as Map<String, dynamic>?;

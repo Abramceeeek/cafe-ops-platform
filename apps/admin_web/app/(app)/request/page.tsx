@@ -104,6 +104,7 @@ export default function NewRequestPage() {
             .from("products")
             .select("id,category_id,name,unit,lead_time_hours")
             .eq("is_available", true)
+            .is("archived_at", null)
             .order("name"),
           supabase.from("modifier_groups").select("id,product_id,name,is_required").order("display_order"),
           supabase.from("modifier_options").select("id,modifier_group_id,name").order("display_order"),

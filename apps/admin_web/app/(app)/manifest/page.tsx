@@ -11,6 +11,7 @@ interface Item {
   id: string;
   quantity: number;
   unit: string;
+  product_name: string | null;
   products: { name: string; product_categories: { name: string } | null } | null;
 }
 interface Row {
@@ -85,7 +86,7 @@ export default function ManifestPage() {
       .select(
         `id, status, requested_delivery_date,
          shops ( name, address ),
-         order_items ( id, quantity, unit, products ( name, product_categories ( name ) ) )`,
+         order_items ( id, quantity, unit, product_name, products ( name, product_categories ( name ) ) )`,
       )
       .in("status", STATUSES)
       .order("requested_delivery_date", { ascending: true });
@@ -250,7 +251,7 @@ export default function ManifestPage() {
                   <div className="mt-1.5 space-y-0.5 text-[13px] text-foreground/80">
                     {o.order_items.map((l) => (
                       <div key={l.id} className="flex justify-between">
-                        <span>{l.products?.name ?? "Item"}</span>
+                        <span>{l.product_name ?? l.products?.name ?? "Item"}</span>
                         <span className="font-mono">{l.quantity} {l.unit}</span>
                       </div>
                     ))}
@@ -267,7 +268,7 @@ export default function ManifestPage() {
                         return (
                           <div key={i.id} className="flex items-center justify-between gap-2 rounded-lg bg-card px-2.5 py-1.5">
                             <span className={"min-w-0 truncate text-[13px] " + (isRemoved ? "line-through opacity-50" : "")}>
-                              {i.products?.name ?? "Item"}
+                              {i.product_name ?? i.products?.name ?? "Item"}
                             </span>
                             {isRemoved ? (
                               <button
