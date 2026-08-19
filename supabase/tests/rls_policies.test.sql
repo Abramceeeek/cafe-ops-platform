@@ -345,16 +345,16 @@ RESET ROLE;
 
 -- 2) A product with order history archives (row kept, history untouched);
 --    a never-ordered one is really deleted.
-INSERT INTO order_items (order_id, product_id, quantity, unit)
-VALUES ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee1','dddddddd-dddd-dddd-dddd-ddddddddddd1', 3, 'kg');
-
 SET request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222201"}';
 SET ROLE authenticated;
-DO $$ DECLARE r jsonb; c int; BEGIN
-  r := public.archive_product('dddddddd-dddd-dddd-dddd-ddddddddddd1');   -- Lamb, 1 order line
+DO $$ DECLARE r jsonb; c int; before int; BEGIN
+  SELECT count(*) INTO before FROM order_items WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF before = 0 THEN RAISE EXCEPTION 'Lamb needs order history for this test'; END IF;
+
+  r := public.archive_product('dddddddd-dddd-dddd-dddd-ddddddddddd1');   -- Lamb, has order lines
   IF r->>'action' <> 'archived' THEN RAISE EXCEPTION 'Lamb should archive, got %', r; END IF;
   SELECT count(*) INTO c FROM order_items WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
-  IF c <> 1 THEN RAISE EXCEPTION 'archive must not touch order history, saw % lines', c; END IF;
+  IF c <> before THEN RAISE EXCEPTION 'archive must not touch order history, % lines became %', before, c; END IF;
 
   r := public.archive_product('dddddddd-dddd-dddd-dddd-ddddddddddd2');   -- Beef (86d), never ordered
   IF r->>'action' <> 'deleted' THEN RAISE EXCEPTION 'unused Beef should delete, got %', r; END IF;
@@ -362,11 +362,11 @@ DO $$ DECLARE r jsonb; c int; BEGIN
   IF c <> 0 THEN RAISE EXCEPTION 'unused product row should be gone, saw %', c; END IF;
 END $$;
 
--- 3) An archived product stays readable, so order history still resolves its name.
+-- 3) An archived product stays readable under RLS, so the joins that order views,
+--    the manifest and the Hub inbox routing rely on still resolve it.
 DO $$ DECLARE n text; BEGIN
-  SELECT p.name INTO n FROM order_items oi JOIN products p ON p.id = oi.product_id
-   WHERE oi.product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
-  IF n IS DISTINCT FROM 'Lamb' THEN RAISE EXCEPTION 'archived product unreadable from history, got %', n; END IF;
+  SELECT name INTO n FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF n IS DISTINCT FROM 'Lamb' THEN RAISE EXCEPTION 'archived product unreadable, got %', n; END IF;
 END $$;
 
 -- 4) Restore puts it back on the ordering list.
