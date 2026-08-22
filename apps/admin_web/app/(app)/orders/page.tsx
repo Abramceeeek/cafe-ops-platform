@@ -26,6 +26,7 @@ interface OrderRow {
     requested_quantity: number | null;
     unit: string;
     unit_cost: number | null;
+    product_name: string | null;
     products: { name: string; product_categories: { name: string } | null } | null;
   }[];
 }
@@ -86,7 +87,7 @@ export default function OrdersPage() {
       .from("orders")
       .select(
         `id, status, requested_delivery_date, submitted_at, was_edited, rejection_reason,
-         order_items ( quantity, requested_quantity, unit, unit_cost, products ( name, product_categories ( name ) ) )`,
+         order_items ( quantity, requested_quantity, unit, unit_cost, product_name, products ( name, product_categories ( name ) ) )`,
       )
       .order("requested_delivery_date", { ascending: false });
     setRows((data ?? []) as unknown as OrderRow[]);
@@ -214,7 +215,7 @@ export default function OrdersPage() {
                                 Number(it.quantity) !== Number(it.requested_quantity);
                               return (
                                 <div key={idx} className="flex items-center justify-between text-[13px]">
-                                  <span className="min-w-0 truncate">{it.products?.name ?? "Item"}</span>
+                                  <span className="min-w-0 truncate">{it.product_name ?? it.products?.name ?? "Item"}</span>
                                   <span className="shrink-0 font-mono">
                                     {changed && (
                                       <span className="mr-1 text-muted-foreground line-through">
@@ -252,7 +253,7 @@ export default function OrdersPage() {
                           </div>
                           {o.order_items.map((it, idx) => (
                             <div key={idx} className="flex items-center justify-between text-[13px]">
-                              <span className="min-w-0 truncate">{it.products?.name ?? "Item"}</span>
+                              <span className="min-w-0 truncate">{it.product_name ?? it.products?.name ?? "Item"}</span>
                               <span className="shrink-0 font-mono">{it.quantity} {it.unit}</span>
                             </div>
                           ))}

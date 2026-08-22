@@ -115,12 +115,12 @@ DO $$ DECLARE c int; BEGIN
 END $$;
 RESET ROLE;
 
--- ── Products: FOH sees only the 1 available product (86d one hidden) ─
+-- ── Products: FOH sees only its own category (Pastry / Retail Bakery) ──
 SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}';
 SET ROLE authenticated;
 DO $$ DECLARE c int; BEGIN
   SELECT count(*) INTO c FROM products;
-  IF c <> 1 THEN RAISE EXCEPTION 'FOH should see only 1 available product, saw %', c; END IF;
+  IF c <> 1 THEN RAISE EXCEPTION 'FOH should see only its 1 Pastry product, saw %', c; END IF;
 END $$;
 RESET ROLE;
 
@@ -330,6 +330,71 @@ DO $$ DECLARE q numeric; BEGIN
   SELECT oi.quantity INTO q FROM orders o JOIN order_items oi ON oi.order_id=o.id
    WHERE o.is_standing AND o.shop_id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1' AND o.requested_delivery_date=CURRENT_DATE;
   IF q <> 5 THEN RAISE EXCEPTION 'current week must stay locked at 5 after a next-week edit, got %', q; END IF;
+END $$;
+
+-- ── PRODUCT ARCHIVE (0051 + 0053) ────────────────────────────
+-- 1) Regression: a specialist can still SEE their own out-of-stock product, so the
+--    86 toggle is reversible without an admin (the old policy hid it from them).
+SET request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222201"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM products WHERE category_id = 'cccccccc-cccc-cccc-cccc-ccccccccccc1';
+  IF c <> 2 THEN RAISE EXCEPTION 'Specialist should see both Meat products incl. the 86d one, saw %', c; END IF;
+END $$;
+RESET ROLE;
+
+-- 2) A product with order history archives (row kept, history untouched);
+--    a never-ordered one is really deleted.
+SET request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222201"}';
+SET ROLE authenticated;
+DO $$ DECLARE r jsonb; c int; before int; BEGIN
+  SELECT count(*) INTO before FROM order_items WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF before = 0 THEN RAISE EXCEPTION 'Lamb needs order history for this test'; END IF;
+
+  r := public.archive_product('dddddddd-dddd-dddd-dddd-ddddddddddd1');   -- Lamb, has order lines
+  IF r->>'action' <> 'archived' THEN RAISE EXCEPTION 'Lamb should archive, got %', r; END IF;
+  SELECT count(*) INTO c FROM order_items WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF c <> before THEN RAISE EXCEPTION 'archive must not touch order history, % lines became %', before, c; END IF;
+
+  r := public.archive_product('dddddddd-dddd-dddd-dddd-ddddddddddd2');   -- Beef (86d), never ordered
+  IF r->>'action' <> 'deleted' THEN RAISE EXCEPTION 'unused Beef should delete, got %', r; END IF;
+  SELECT count(*) INTO c FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd2';
+  IF c <> 0 THEN RAISE EXCEPTION 'unused product row should be gone, saw %', c; END IF;
+END $$;
+
+-- 3) An archived product stays readable under RLS, so the joins that order views,
+--    the manifest and the Hub inbox routing rely on still resolve it.
+DO $$ DECLARE n text; BEGIN
+  SELECT name INTO n FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF n IS DISTINCT FROM 'Lamb' THEN RAISE EXCEPTION 'archived product unreadable, got %', n; END IF;
+END $$;
+
+-- 4) Restore puts it back on the ordering list.
+DO $$ DECLARE ok boolean; BEGIN
+  PERFORM public.restore_product('dddddddd-dddd-dddd-dddd-ddddddddddd1');
+  SELECT archived_at IS NULL AND is_available INTO ok FROM products
+   WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF NOT ok THEN RAISE EXCEPTION 'restore_product did not clear the archive flags'; END IF;
+END $$;
+
+-- 5) A specialist cannot archive another zone's product.
+DO $$ BEGIN
+  PERFORM public.archive_product('dddddddd-dddd-dddd-dddd-ddddddddddd4');  -- Pastry
+  RAISE EXCEPTION 'Meat specialist archived a Pastry product';
+EXCEPTION WHEN sqlstate 'P0001' THEN
+  IF SQLERRM <> 'forbidden' THEN RAISE; END IF;
+END $$;
+RESET ROLE;
+
+-- 6) Order lines carry a name snapshot, so a later rename leaves history alone.
+DO $$ DECLARE n text; BEGIN
+  SELECT product_name INTO n FROM order_items
+   WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1' LIMIT 1;
+  IF n <> 'Lamb' THEN RAISE EXCEPTION 'product_name snapshot missing, got %', n; END IF;
+  UPDATE products SET name = 'Lamb Shoulder' WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  SELECT product_name INTO n FROM order_items
+   WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1' LIMIT 1;
+  IF n <> 'Lamb' THEN RAISE EXCEPTION 'rename rewrote history, got %', n; END IF;
 END $$;
 
 SELECT 'rls_policies.test.sql: all scenarios passed' AS result;

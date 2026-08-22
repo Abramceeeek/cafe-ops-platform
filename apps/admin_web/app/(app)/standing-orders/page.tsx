@@ -64,7 +64,12 @@ export default function StandingOrdersPage() {
     const supabase = createClient();
     const [{ data: cats }, { data: prods }, { data: so }] = await Promise.all([
       supabase.from("product_categories").select("id,name,display_order").order("display_order"),
-      supabase.from("products").select("id,category_id,name,unit").eq("is_available", true).order("name"),
+      supabase
+        .from("products")
+        .select("id,category_id,name,unit")
+        .eq("is_available", true)
+        .is("archived_at", null)
+        .order("name"),
       supabase
         .from("standing_orders")
         .select(

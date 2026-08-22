@@ -38,7 +38,7 @@ final pendingOrdersProvider = FutureProvider<List<PendingOrder>>((ref) async {
       .select(
         'id, requested_delivery_date, is_emergency, '
         'shops(name), '
-        'order_items(id, quantity, unit, products(name, product_categories(assigned_role)))',
+        'order_items(id, quantity, unit, product_name, products(name, product_categories(assigned_role)))',
       )
       .eq('status', 'pending_request')
       .order('requested_delivery_date');
@@ -59,7 +59,7 @@ final pendingOrdersProvider = FutureProvider<List<PendingOrder>>((ref) async {
         final m = i as Map<String, dynamic>;
         return PendingItem(
           m['id'] as String,
-          (m['products']?['name'] ?? 'Item') as String,
+          (m['product_name'] ?? m['products']?['name'] ?? 'Item') as String,
           (m['quantity'] as num?) ?? 0,
           (m['unit'] ?? '') as String,
         );

@@ -67,7 +67,7 @@ final routeOrdersProvider = FutureProvider<List<RouteOrder>>((ref) async {
       .from('orders')
       .select(
         'id, status, requested_delivery_date, shops(name, address), '
-        'order_items(quantity, unit, products(name, product_categories(name)))',
+        'order_items(quantity, unit, product_name, products(name, product_categories(name)))',
       )
       .inFilter('status',
           ['specialist_approved', 'in_progress', 'packaged', 'ready_for_courier', 'in_transit', 'delivered'])
@@ -84,7 +84,7 @@ final routeOrdersProvider = FutureProvider<List<RouteOrder>>((ref) async {
       items: items.map((i) {
         final m = i as Map<String, dynamic>;
         return RouteItem(
-          (m['products']?['name'] ?? 'Item') as String,
+          (m['product_name'] ?? m['products']?['name'] ?? 'Item') as String,
           (m['quantity'] as num?) ?? 0,
           (m['unit'] ?? '') as String,
           catName: (m['products']?['product_categories']?['name'] ?? '') as String,

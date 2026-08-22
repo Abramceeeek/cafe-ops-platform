@@ -36,7 +36,7 @@ final shopOrdersProvider = FutureProvider<List<ShopOrder>>((ref) async {
   final rows = await supabase
       .from('orders')
       .select('id, status, requested_delivery_date, is_emergency, rejection_reason, '
-          'order_items(quantity, unit, products(name))')
+          'order_items(quantity, unit, product_name, products(name))')
       .order('requested_delivery_date', ascending: false);
   return (rows as List).map((r) {
     final items = (r['order_items'] as List?) ?? [];
@@ -48,7 +48,8 @@ final shopOrdersProvider = FutureProvider<List<ShopOrder>>((ref) async {
       rejectionReason: r['rejection_reason'] as String?,
       items: items.map((i) {
         final m = i as Map<String, dynamic>;
-        return OrderItemView((m['products']?['name'] ?? 'Item') as String, (m['quantity'] as num?) ?? 0, (m['unit'] ?? '') as String);
+        return OrderItemView((m['product_name'] ?? m['products']?['name'] ?? 'Item') as String,
+            (m['quantity'] as num?) ?? 0, (m['unit'] ?? '') as String);
       }).toList(),
     );
   }).toList();
