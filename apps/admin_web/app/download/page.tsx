@@ -95,7 +95,12 @@ export default function Download() {
         </p>
         <p className="mt-2">
           <strong className="text-neutral-800">Android:</strong> tap “download APK”, then open the
-          downloaded file and tap <em>Install</em> (allow installs from this source if asked).
+          downloaded file and tap <em>Install</em> (allow installs from this source if asked). If it
+          says <em>App not installed</em>, uninstall the old HubSync app first — needed once only.
+        </p>
+        <p className="mt-2">
+          <strong className="text-neutral-800">Updates:</strong> in TestFlight, turn on{" "}
+          <em>Automatic Updates</em> for each HubSync app so fixes arrive without you doing anything.
         </p>
       </div>
 

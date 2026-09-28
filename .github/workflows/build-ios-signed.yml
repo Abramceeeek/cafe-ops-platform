@@ -9,10 +9,22 @@ name: build-ios-signed
 #                   IOS_TEAM_ID, SUPABASE_URL, SUPABASE_ANON_KEY.
 # Prereq: the two app records must exist in App Store Connect (com.hubsync.hub,
 #         com.hubsync.shop) or the TestFlight upload step fails.
+#
+# Runs on every app change merged to main (TestFlight then auto-updates testers), and
+# monthly regardless: TestFlight builds expire after 90 days and an expired build
+# stops launching, so a fresh one must always exist.
 on:
   workflow_dispatch:
   push:
-    branches: [ci/ios-signed]
+    branches: [ci/ios-signed, main]
+    paths:
+      - "apps/shop_app/**"
+      - "apps/hub_app/**"
+      - "packages/**"
+      - "firebase/**"
+      - ".github/workflows/build-ios-signed.yml"
+  schedule:
+    - cron: "0 6 1 * *"
 
 permissions:
   contents: read
@@ -27,6 +39,8 @@ jobs:
         app: [shop_app, hub_app]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history: APP_CODE_VERSION is the commit count
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable   # newest Xcode on the image (26.x → iOS 26 SDK)
@@ -69,6 +83,10 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PL" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string remote-notification" "$PL" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$PL" || true
+          # Only standard HTTPS — declaring it skips App Store Connect's export-compliance
+          # question, which otherwise parks every build in MISSING_EXPORT_COMPLIANCE.
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PL" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PL"
 
       - name: Build Flutter (no codesign — primes the Flutter framework + pods)
         working-directory: apps/${{ matrix.app }}
@@ -78,7 +96,9 @@ jobs:
           flutter build ios --release --no-codesign \
             --build-number=${{ github.run_number }} \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
-            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
+            --dart-define=APP_CODE_VERSION=$(git rev-list --count HEAD) \
+            --dart-define=APP_GIT_SHA=$(git rev-parse --short HEAD)
 
       - name: Prepare distribution signing (keychain + App Store profile)
         working-directory: apps/${{ matrix.app }}
@@ -196,11 +216,15 @@ jobs:
           cat > "$RUNNER_TEMP/asc_key.json" <<EOF
           {"key_id":"${{ secrets.ASC_KEY_ID }}","issuer_id":"${{ secrets.ASC_ISSUER_ID }}","key":"${{ secrets.ASC_KEY_P8 }}","is_key_content_base64":true,"in_house":false}
           EOF
+          # Hand the build straight to both tester groups (was --skip_submission, which
+          # left every new build invisible to staff until someone added it by hand).
           fastlane pilot upload \
             --ipa "$IPA" \
             --api_key_path "$RUNNER_TEMP/asc_key.json" \
-            --skip_waiting_for_build_processing true \
-            --skip_submission true
+            --distribute_external true \
+            --groups "Team,External team" \
+            --notify_external_testers true \
+            --changelog "Build ${{ github.run_number }}: $(git log -1 --pretty=%s | tr -d '\"')"
 
       - name: Result
         run: echo "✅ ${{ matrix.app }} signed + uploaded to TestFlight."

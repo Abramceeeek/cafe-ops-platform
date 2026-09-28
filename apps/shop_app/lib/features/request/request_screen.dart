@@ -204,6 +204,11 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
         title: const Text('New Request'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh products',
+            onPressed: () => ref.invalidate(catalogProvider),
+          ),
+          IconButton(
             icon: const Icon(Icons.event_repeat),
             tooltip: 'Save as standing order',
             onPressed: cart.isEmpty ? null : _saveAsStanding,
@@ -215,12 +220,17 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
           Expanded(
             child: catalog.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Failed to load catalog:\n$e', textAlign: TextAlign.center)),
+              error: (e, _) => _CatalogMessage('Failed to load catalog:\n$e', onRetry: () => ref.invalidate(catalogProvider)),
               data: (products) {
                 if (products.isEmpty) {
-                  return const Center(child: Text('No products available.'));
+                  return _CatalogMessage(
+                    'No products to show.\nIf this doesn\'t clear after a refresh, ask your manager to check your account.',
+                    onRetry: () => ref.invalidate(catalogProvider),
+                  );
                 }
-                return ListView.separated(
+                return RefreshIndicator(
+                  onRefresh: () => ref.refresh(catalogProvider.future),
+                  child: ListView.separated(
                   itemCount: products.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) {
@@ -284,6 +294,7 @@ class _RequestScreenState extends ConsumerState<RequestScreen> {
                                 )),
                     );
                   },
+                  ),
                 );
               },
             ),
@@ -463,6 +474,31 @@ class _OptionsSheetState extends State<_OptionsSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Empty/error state that is still pull-to-refresh-able and has an explicit retry,
+/// so a bad load never needs an app restart to clear.
+class _CatalogMessage extends StatelessWidget {
+  final String text;
+  final VoidCallback onRetry;
+  const _CatalogMessage(this.text, {required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: () async => onRetry(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(32),
+        children: [
+          const SizedBox(height: 120),
+          Text(text, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          Center(child: OutlinedButton.icon(icon: const Icon(Icons.refresh), label: const Text('Retry'), onPressed: onRetry)),
+        ],
       ),
     );
   }

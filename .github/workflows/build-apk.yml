@@ -1,20 +1,21 @@
 name: build-apk
 
-# Builds installable debug APKs for the two Flutter apps in CI (the runners have
-# Flutter + the Android SDK — no local toolchain needed). Download the APK from
-# the run's Artifacts and sideload it on a phone. Supabase creds are passed at
-# build time via --dart-define from repo secrets SUPABASE_URL / SUPABASE_ANON_KEY
-# (add them under Settings → Secrets → Actions; the anon key is public-safe).
-# Push is wired client-side (FCM handlers); a debug APK still installs and runs
-# without the server pipeline activated. Sending pushes needs the Supabase webhook
-# + Vercel env (FIREBASE_SERVICE_ACCOUNT / NOTIFY_SECRET) configured by the owner.
+# Builds signed RELEASE APKs for the two Flutter apps and publishes them to the
+# `android-latest` GitHub release, which the /download page and the in-app
+# "Update required" screen link to. Supabase creds are passed at build time via
+# --dart-define from repo secrets SUPABASE_URL / SUPABASE_ANON_KEY.
+#
+# Signing uses ONE persistent key (secrets ANDROID_KEYSTORE_B64 / _PASSWORD /
+# ANDROID_KEY_ALIAS; backup + password with the owner). The old debug builds were
+# signed with a throwaway per-runner key, so Android refused to install a new APK
+# over an old one. Losing this key means every phone must uninstall + reinstall.
 on:
   workflow_dispatch:
   push:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write   # publish APKs to the android-latest release
 
 jobs:
   apk:
@@ -26,6 +27,8 @@ jobs:
         app: [shop_app, hub_app]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history: APP_CODE_VERSION is the commit count
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -59,6 +62,25 @@ jobs:
           # folder is generated fresh by `flutter create`, so inject it each build.
           sed -i '/<manifest/a\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' android/app/src/main/AndroidManifest.xml
           grep -n "POST_NOTIFICATIONS" android/app/src/main/AndroidManifest.xml
+      - name: Add INTERNET permission (release builds)
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          # flutter create only puts INTERNET in the debug/profile manifests; a release
+          # APK without it can't reach Supabase at all.
+          sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+          grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
+      - name: Release signing (persistent key)
+        working-directory: apps/${{ matrix.app }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          [ -n "$KEYSTORE_B64" ] || { echo "ANDROID_KEYSTORE_B64 secret missing"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 --decode > android/app/release.p12
+          G=android/app/build.gradle.kts
+          sed -i '/^    buildTypes {/i\    signingConfigs {\n        create("release") {\n            storeFile = file("release.p12")\n            storeType = "pkcs12"\n            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")\n            keyAlias = System.getenv("ANDROID_KEY_ALIAS")\n            keyPassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")\n        }\n    }' "$G"
+          sed -i 's/signingConfig = signingConfigs.getByName("debug")/signingConfig = signingConfigs.getByName("release")/' "$G"
+          grep -q 'getByName("release")' "$G" || { echo "release signingConfig not wired"; sed -n '/android {/,$p' "$G"; exit 1; }
+          sed -n '/signingConfigs {/,/^    }/p' "$G"
       - name: Force compileSdk 36 (newer androidx deps require it)
         working-directory: apps/${{ matrix.app }}
         run: |
@@ -88,14 +110,34 @@ jobs:
         run: |
           flutter pub get
           dart run flutter_launcher_icons
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: apps/${{ matrix.app }}
-        run: >-
-          flutter build apk --debug
-          --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          flutter build apk --release \
+            --build-number=${{ github.run_number }} \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
+            --dart-define=APP_CODE_VERSION=$(git rev-list --count HEAD) \
+            --dart-define=APP_GIT_SHA=$(git rev-parse --short HEAD)
+      - name: Verify the APK is signed with the release key
+        run: |
+          APK=apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
+          SIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$SIGNER" verify --print-certs "$APK" | tee "$RUNNER_TEMP/certs.txt"
+          grep -q "CN=HubSync" "$RUNNER_TEMP/certs.txt" || { echo "APK not signed with the HubSync release key"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.app }}-debug-apk
-          path: apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-debug.apk
+          name: ${{ matrix.app }}-release-apk
+          path: apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+      - name: Publish to the android-latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
+          cp apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk "hubsync-${SHORT}.apk"
+          gh release upload android-latest "hubsync-${SHORT}.apk" --clobber
