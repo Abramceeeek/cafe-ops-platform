@@ -216,13 +216,14 @@ jobs:
           cat > "$RUNNER_TEMP/asc_key.json" <<EOF
           {"key_id":"${{ secrets.ASC_KEY_ID }}","issuer_id":"${{ secrets.ASC_ISSUER_ID }}","key":"${{ secrets.ASC_KEY_P8 }}","is_key_content_base64":true,"in_house":false}
           EOF
-          # Hand the build straight to both tester groups (was --skip_submission, which
-          # left every new build invisible to staff until someone added it by hand).
+          # Hand the build straight to the external testers (was --skip_submission, which
+          # left every new build invisible to staff until someone added it by hand). The
+          # internal "Team" group has access to all builds, and Apple rejects adding it.
           fastlane pilot upload \
             --ipa "$IPA" \
             --api_key_path "$RUNNER_TEMP/asc_key.json" \
             --distribute_external true \
-            --groups "Team,External team" \
+            --groups "External team" \
             --notify_external_testers true \
             --changelog "Build ${{ github.run_number }}: $(git log -1 --pretty=%s | tr -d '\"')"
 
