@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/supabase_provider.dart';
+import '../../core/auth_provider.dart';
 
 class ModOption {
   final String id;
@@ -37,6 +38,9 @@ class Product {
 }
 
 final catalogProvider = FutureProvider<List<Product>>((ref) async {
+  // Refetch when the signed-in user changes: this provider outlives sign-out, so a
+  // list fetched for another (or a not-yet-restored) session must never stick.
+  ref.watch(currentUserProvider.select((u) => u?.id));
   final supabase = ref.watch(supabaseProvider);
   final rows = await supabase
       .from('products')

@@ -27,6 +27,19 @@ const _destinations = <NavDestinationData>[
   NavDestinationData(Icons.person_outline, Icons.person, 'Account'),
 ];
 
+/// Without this the role guard's sign-out looks like a random logout. Deferred a
+/// frame because redirect can run mid-build.
+void _explainSignOut() {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    scaffoldMessengerKey.currentState
+      ?..clearSnackBars()
+      ..showSnackBar(const SnackBar(
+        content: Text('This account is switched off or not a shop account. Ask your manager to check it.'),
+        duration: Duration(seconds: 8),
+      ));
+  });
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   ref.watch(authStateProvider);
   final roleAsync = ref.watch(currentUserRoleProvider);
@@ -48,6 +61,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (role != UserRole.fohManager && role != UserRole.kitchenManager) {
           // If unauthorized, we sign them out to prevent getting stuck
           ref.read(supabaseProvider).auth.signOut();
+          _explainSignOut();
           return '/login';
         }
 

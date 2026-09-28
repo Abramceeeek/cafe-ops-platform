@@ -21,6 +21,19 @@ final _catalogKey = GlobalKey<NavigatorState>();
 final _routeKey = GlobalKey<NavigatorState>();
 final _accountKey = GlobalKey<NavigatorState>();
 
+/// Without this the role guard's sign-out looks like a random logout. Deferred a
+/// frame because redirect can run mid-build.
+void _explainSignOut() {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    scaffoldMessengerKey.currentState
+      ?..clearSnackBars()
+      ..showSnackBar(const SnackBar(
+        content: Text('This account is switched off or not a Hub account. Ask your manager to check it.'),
+        duration: Duration(seconds: 8),
+      ));
+  });
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   ref.watch(authStateProvider);
   final roleAsync = ref.watch(currentUserRoleProvider);
@@ -55,6 +68,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (!isHubRole) {
         // If unauthorized, sign them out to prevent getting stuck.
         ref.read(supabaseProvider).auth.signOut();
+        _explainSignOut();
         return '/login';
       }
 

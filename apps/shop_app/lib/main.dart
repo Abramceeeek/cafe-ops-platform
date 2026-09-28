@@ -8,6 +8,8 @@ import 'core/router.dart';
 import 'core/push.dart';
 import 'core/notifications.dart';
 import 'core/theme_mode_provider.dart';
+import 'core/app_version.dart';
+import 'features/request/request_providers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,10 +47,24 @@ class ShopApp extends ConsumerStatefulWidget {
 }
 
 class _ShopAppState extends ConsumerState<ShopApp> {
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => setupNotificationHandlers());
+    // Tablets sit on the counter for days: re-check the update gate and reload the
+    // catalog whenever the app comes back to the foreground.
+    _lifecycle = AppLifecycleListener(onResume: () {
+      ref.invalidate(updateRequiredProvider);
+      ref.invalidate(catalogProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   @override
@@ -67,9 +83,10 @@ class _ShopAppState extends ConsumerState<ShopApp> {
         // Bigger type on large wall-mounted displays; phones stay at 1.0.
         final width = MediaQuery.sizeOf(context).width;
         final scale = (width / 700).clamp(1.0, 1.3).toDouble();
+        final update = ref.watch(updateRequiredProvider).valueOrNull;
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
-          child: child!,
+          child: update != null ? UpdateRequiredScreen(info: update) : child!,
         );
       },
     );

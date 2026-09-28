@@ -20,9 +20,12 @@ final currentUserRoleProvider = FutureProvider<UserRole?>((ref) async {
   final supabase = ref.watch(supabaseProvider);
   final response = await supabase
       .from(AppConstants.profilesTable)
-      .select('role')
+      .select('role, is_active')
       .eq('id', user.id)
       .single();
 
+  // RLS treats an inactive profile as having no role (every list comes back empty),
+  // so the app does too: the router's role guard signs it out.
+  if (response['is_active'] == false) return null;
   return UserRole.fromString(response['role'] as String);
 });

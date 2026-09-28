@@ -4,6 +4,7 @@ import 'package:shared_constants/shared_constants.dart';
 import '../../core/supabase_provider.dart';
 import '../../core/theme_mode_provider.dart';
 import '../../core/auth_provider.dart';
+import '../../core/app_version.dart';
 
 class AccountProfile {
   final String name;
@@ -107,6 +108,11 @@ class AccountScreen extends ConsumerWidget {
               label: const Text('Sign out'),
               onPressed: () => ref.read(supabaseProvider).auth.signOut(),
             ),
+          ),
+          const SizedBox(height: 16),
+          // Quote this when reporting a problem — it pins down exactly which code is running.
+          const Center(
+            child: Text('Version $appCodeVersion · $appGitSha', style: TextStyle(fontSize: 12, color: Colors.grey)),
           ),
         ],
       ),
