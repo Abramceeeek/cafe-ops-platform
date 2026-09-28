@@ -29,3 +29,10 @@ export const USER_ROLES = [
 
 // Roles a catalog category can be assigned to.
 export const CATEGORY_ROLES = ["bread_baker", "meat_specialist", "admin"];
+
+// Shop roles that can see + order a category (product_categories.shop_roles).
+export const SHOP_ROLES = ["foh_manager", "kitchen_manager"];
+export const SHOP_ROLE_SHORT: Record<string, string> = {
+  foh_manager: "FOH",
+  kitchen_manager: "Kitchen",
+};
