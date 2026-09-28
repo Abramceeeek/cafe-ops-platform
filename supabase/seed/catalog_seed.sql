@@ -8,11 +8,11 @@ INSERT INTO shops (name) VALUES
   ('Shoreditch'), ('Clapham'), ('St. Albans'), ('Chigwell'),
   ('Stratford'), ('South Woodford'), ('Wanstead');
 
--- ── Categories (→ Hub specialist role) ──────────────────────────────
-INSERT INTO product_categories (name, assigned_role, display_order) VALUES
-  ('Kitchen Bread',          'bread_baker',     1),
-  ('Smoked / Meat / Prep',   'meat_specialist', 2),
-  ('Pastry / Retail Bakery', 'pastry_chef',     3);
+-- ── Categories (→ Hub specialist role; shop_roles = who sees + orders it) ──
+INSERT INTO product_categories (name, assigned_role, shop_roles, display_order) VALUES
+  ('Kitchen Bread',          'bread_baker',     '{kitchen_manager}', 1),
+  ('Smoked / Meat / Prep',   'meat_specialist', '{kitchen_manager}', 2),
+  ('Pastry / Retail Bakery', 'pastry_chef',     '{foh_manager}',     3);
 
 -- ── Products ────────────────────────────────────────────────────────
 INSERT INTO products (category_id, name, unit, lead_time_hours)
@@ -57,12 +57,14 @@ INSERT INTO cutoff_config (cutoff_time, timezone) VALUES ('10:00:00', 'Europe/Lo
 
 -- ── Assertions ──────────────────────────────────────────────────────
 DO $$
-DECLARE n_shops int; n_cats int; n_prod int;
+DECLARE n_shops int; n_cats int; n_prod int; hidden text;
 BEGIN
   SELECT count(*) INTO n_shops FROM shops;
   SELECT count(*) INTO n_cats  FROM product_categories;
   SELECT count(*) INTO n_prod  FROM products;
+  SELECT string_agg(name, ', ') INTO hidden FROM product_categories WHERE shop_roles = '{}';
   IF n_shops < 7  THEN RAISE EXCEPTION 'expected >=7 shops, got %', n_shops; END IF;
   IF n_cats  <> 3 THEN RAISE EXCEPTION 'expected 3 categories, got %', n_cats; END IF;
   IF n_prod  < 31 THEN RAISE EXCEPTION 'expected >=31 products, got %', n_prod; END IF;
+  IF hidden IS NOT NULL THEN RAISE EXCEPTION 'categories no shop can order: %', hidden; END IF;
 END $$;

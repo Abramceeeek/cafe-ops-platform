@@ -27,9 +27,9 @@ INSERT INTO profiles (id, full_name, role, shop_id) VALUES
   ('33333333-3333-3333-3333-333333333301','Courier','courier',NULL),
   ('44444444-4444-4444-4444-444444444401','Admin','admin',NULL);
 
-INSERT INTO product_categories (id, name, assigned_role) VALUES
-  ('cccccccc-cccc-cccc-cccc-ccccccccccc1','Meat','meat_specialist'),
-  ('cccccccc-cccc-cccc-cccc-ccccccccccc3','Pastry / Retail Bakery','bread_baker');
+INSERT INTO product_categories (id, name, assigned_role, shop_roles) VALUES
+  ('cccccccc-cccc-cccc-cccc-ccccccccccc1','Meat','meat_specialist','{kitchen_manager}'),
+  ('cccccccc-cccc-cccc-cccc-ccccccccccc3','Pastry / Retail Bakery','bread_baker','{foh_manager}');
 
 INSERT INTO products (id, category_id, name, unit, is_available) VALUES
   ('dddddddd-dddd-dddd-dddd-ddddddddddd1','cccccccc-cccc-cccc-cccc-ccccccccccc1','Lamb','kg',TRUE),
@@ -234,8 +234,8 @@ RESET ROLE;
 -- ── Specialist Category Filtering Test (F-11) ───────────────────────
 -- Meat specialist should only see the Meat order (and not Bread/Pastry orders)
 -- We need to add a Bread category and Bread product, then a Bread order.
-INSERT INTO product_categories (id, name, assigned_role) VALUES
-  ('cccccccc-cccc-cccc-cccc-ccccccccccc2', 'Bread', 'bread_baker');
+INSERT INTO product_categories (id, name, assigned_role, shop_roles) VALUES
+  ('cccccccc-cccc-cccc-cccc-ccccccccccc2', 'Bread', 'bread_baker', '{kitchen_manager}');
 INSERT INTO products (id, category_id, name, unit, is_available) VALUES
   ('dddddddd-dddd-dddd-dddd-ddddddddddd3', 'cccccccc-cccc-cccc-cccc-ccccccccccc2', 'Sourdough', 'loaf', TRUE);
 
@@ -442,5 +442,147 @@ DO $$ DECLARE c int; BEGIN
   IF c <> 2 THEN RAISE EXCEPTION 'anon should read 2 app_versions rows, saw %', c; END IF;
 END $$;
 RESET ROLE;
+
+-- ── CATEGORY SHOP_ROLES (0058) ───────────────────────────────────
+-- Who sees and who orders a category is product_categories.shop_roles, never its
+-- name. 1) Renaming a category keeps it visible (0018/0021/0040 lost it).
+UPDATE product_categories SET name = 'Viennoiserie' WHERE id = 'cccccccc-cccc-cccc-cccc-ccccccccccc3';
+
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM products WHERE category_id = 'cccccccc-cccc-cccc-cccc-ccccccccccc3';
+  IF c <> 1 THEN RAISE EXCEPTION 'FOH lost the renamed Pastry category, saw % products', c; END IF;
+  SELECT count(*) INTO c FROM products;
+  IF c <> 1 THEN RAISE EXCEPTION 'FOH should still see only the Croissant, saw %', c; END IF;
+END $$;
+RESET ROLE;
+
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111103"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM products WHERE category_id = 'cccccccc-cccc-cccc-cccc-ccccccccccc3';
+  IF c <> 0 THEN RAISE EXCEPTION 'Kitchen must not see the FOH-only category, saw %', c; END IF;
+  SELECT count(*) INTO c FROM products WHERE category_id = 'cccccccc-cccc-cccc-cccc-ccccccccccc2';
+  IF c <> 1 THEN RAISE EXCEPTION 'Kitchen should see its Bread product, saw %', c; END IF;
+END $$;
+RESET ROLE;
+
+-- 2) A new category is hidden from every shop until a role is ticked, and the
+--    tick alone decides who sees it.
+INSERT INTO product_categories (id, name, assigned_role) VALUES
+  ('cccccccc-cccc-cccc-cccc-ccccccccccc4', 'Seasonal', 'bread_baker');
+INSERT INTO products (id, category_id, name, unit) VALUES
+  ('dddddddd-dddd-dddd-dddd-ddddddddddd6', 'cccccccc-cccc-cccc-cccc-ccccccccccc4', 'Mince Pie', 'unit');
+
+SET request.jwt.claims = '{"sub":"44444444-4444-4444-4444-444444444401"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd6';
+  IF c <> 1 THEN RAISE EXCEPTION 'Admin should see the unticked category''s product, saw %', c; END IF;
+END $$;
+RESET ROLE;
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd6';
+  IF c <> 0 THEN RAISE EXCEPTION 'FOH saw a product in a category with no shop_roles'; END IF;
+END $$;
+RESET ROLE;
+
+UPDATE product_categories SET shop_roles = '{foh_manager}' WHERE id = 'cccccccc-cccc-cccc-cccc-ccccccccccc4';
+SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd6';
+  IF c <> 1 THEN RAISE EXCEPTION 'FOH should see the category once ticked, saw %', c; END IF;
+END $$;
+RESET ROLE;
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111103"}';
+SET ROLE authenticated;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd6';
+  IF c <> 0 THEN RAISE EXCEPTION 'Kitchen saw an FOH-only category, saw %', c; END IF;
+END $$;
+RESET ROLE;
+
+-- 3) Only shop roles can be ticked.
+DO $$ BEGIN
+  UPDATE product_categories SET shop_roles = '{courier}' WHERE id = 'cccccccc-cccc-cccc-cccc-ccccccccccc4';
+  RAISE EXCEPTION 'shop_roles accepted a non-shop role';
+EXCEPTION WHEN check_violation THEN NULL;
+END $$;
+
+-- 4) Ordering follows the same flag. FOH orders from its renamed category; Kitchen
+--    can't order it on any path (the old assigned_role proxy let it, since the
+--    category is bread_baker's).
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111101"}';
+SET ROLE authenticated;
+DO $$ DECLARE r jsonb; BEGIN
+  r := public.submit_request('2026-07-02',
+    json_build_array(json_build_object('product_id','dddddddd-dddd-dddd-dddd-ddddddddddd4','quantity',2))::jsonb);
+  IF jsonb_array_length(r->'order_ids') <> 1 THEN RAISE EXCEPTION 'FOH could not order from its renamed category: %', r; END IF;
+END $$;
+RESET ROLE;
+
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111103"}';
+SET ROLE authenticated;
+DO $$ BEGIN
+  PERFORM public.submit_request('2026-07-02',
+    json_build_array(json_build_object('product_id','dddddddd-dddd-dddd-dddd-ddddddddddd4','quantity',1))::jsonb);
+  RAISE EXCEPTION 'Kitchen ordered an FOH-only product via submit_request';
+EXCEPTION WHEN sqlstate 'P0001' THEN
+  IF SQLERRM NOT LIKE 'security_bypass%' THEN RAISE; END IF;
+END $$;
+DO $$ BEGIN
+  PERFORM public.save_standing_order(1, CURRENT_DATE,
+    json_build_array(json_build_object('product_id','dddddddd-dddd-dddd-dddd-ddddddddddd4','quantity',1))::jsonb);
+  RAISE EXCEPTION 'Kitchen put an FOH-only product in a standing order';
+EXCEPTION WHEN sqlstate 'P0001' THEN
+  IF SQLERRM NOT LIKE 'security_bypass%' THEN RAISE; END IF;
+END $$;
+RESET ROLE;
+
+-- Web path (service-role RPC, called here as superuser): same rule, by submitter.
+DO $$ DECLARE r jsonb; BEGIN
+  r := public.submit_request_atomic(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', '11111111-1111-1111-1111-111111111101', '2026-07-02',
+    json_build_array(json_build_array(json_build_object(
+      'product_id','dddddddd-dddd-dddd-dddd-ddddddddddd4','quantity',1,'unit','unit')))::jsonb);
+  IF jsonb_array_length(r->'order_ids') <> 1 THEN RAISE EXCEPTION 'web submit for FOH failed: %', r; END IF;
+END $$;
+DO $$ BEGIN
+  PERFORM public.submit_request_atomic(
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1', '11111111-1111-1111-1111-111111111103', '2026-07-02',
+    json_build_array(json_build_array(json_build_object(
+      'product_id','dddddddd-dddd-dddd-dddd-ddddddddddd4','quantity',1,'unit','unit')))::jsonb);
+  RAISE EXCEPTION 'submit_request_atomic let Kitchen order an FOH-only product';
+EXCEPTION WHEN sqlstate 'P0001' THEN
+  IF SQLERRM NOT LIKE 'security_bypass%' THEN RAISE; END IF;
+END $$;
+
+-- 5) The generator skips a standing line whose category no longer lists the
+--    spec's role, and picks it up again once the role is re-ticked.
+SET request.jwt.claims = '{"sub":"11111111-1111-1111-1111-111111111103"}';
+SET ROLE authenticated;
+SELECT public.save_standing_order(
+  EXTRACT(ISODOW FROM CURRENT_DATE)::int, CURRENT_DATE,
+  json_build_array(json_build_object('product_id','dddddddd-dddd-dddd-dddd-ddddddddddd3','quantity',3))::jsonb);
+RESET ROLE;
+
+UPDATE product_categories SET shop_roles = '{}' WHERE id = 'cccccccc-cccc-cccc-cccc-ccccccccccc2';
+SELECT public.generate_standing_orders();
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM orders o JOIN standing_orders s ON s.id = o.standing_order_id
+   WHERE s.owner_role = 'kitchen_manager' AND o.requested_delivery_date = CURRENT_DATE;
+  IF c <> 0 THEN RAISE EXCEPTION 'generator ordered from a category Kitchen can no longer order, got %', c; END IF;
+END $$;
+
+UPDATE product_categories SET shop_roles = '{kitchen_manager}' WHERE id = 'cccccccc-cccc-cccc-cccc-ccccccccccc2';
+SELECT public.generate_standing_orders();
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM orders o JOIN standing_orders s ON s.id = o.standing_order_id
+   WHERE s.owner_role = 'kitchen_manager' AND o.requested_delivery_date = CURRENT_DATE;
+  IF c <> 1 THEN RAISE EXCEPTION 're-ticking Kitchen should restore its standing order, got %', c; END IF;
+END $$;
 
 SELECT 'rls_policies.test.sql: all scenarios passed' AS result;

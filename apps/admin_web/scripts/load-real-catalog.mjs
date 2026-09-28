@@ -17,18 +17,21 @@ const CATEGORIES = [
   {
     name: "Kitchen Bread",
     assigned_role: "bread_baker",
+    shop_roles: ["kitchen_manager"],
     unit: "item",
     products: ["Sourdough Bread", "Focaccia", "Burger Bun"],
   },
   {
     name: "Smoked / Meat / Prep",
     assigned_role: "meat_specialist",
+    shop_roles: ["kitchen_manager"],
     unit: "kg",
     products: ["Smoked Lamb", "Smoked Brisket", "Smoked Chicken", "Halal Bacon", "Halal Sausage", "Pickled Goods"],
   },
   {
     name: "Pastry / Retail Bakery",
     assigned_role: "pastry_chef",
+    shop_roles: ["foh_manager"],
     unit: "item",
     products: [
       "Plain C.Buns", "Raspberry White Choco", "Pist. C.Buns", "Apple C. Buns",
@@ -67,7 +70,7 @@ for (const c of CATEGORIES) {
   order += 1;
   const { data: cat, error: cErr } = await a
     .from("product_categories")
-    .insert({ name: c.name, assigned_role: c.assigned_role, display_order: order })
+    .insert({ name: c.name, assigned_role: c.assigned_role, shop_roles: c.shop_roles, display_order: order })
     .select("id")
     .single();
   die(`insert category ${c.name}`, cErr);

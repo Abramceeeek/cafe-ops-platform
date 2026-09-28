@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { roleLabel, CATEGORY_ROLES } from "@/lib/roles";
+import { roleLabel, CATEGORY_ROLES, SHOP_ROLES, SHOP_ROLE_SHORT } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,7 @@ interface Category {
   id: string;
   name: string;
   assigned_role: string;
+  shop_roles: string[];
 }
 interface Product {
   id: string;
@@ -72,6 +73,8 @@ export default function CatalogPage() {
   // forms
   const [catName, setCatName] = useState("");
   const [catRole, setCatRole] = useState(CATEGORY_ROLES[0]);
+  const [catShopRoles, setCatShopRoles] = useState<string[]>([]);
+  const [savingShopRoles, setSavingShopRoles] = useState<string | null>(null); // category id
   const [prodName, setProdName] = useState("");
   const [prodCat, setProdCat] = useState("");
   const [prodUnit, setProdUnit] = useState("kg");
@@ -88,7 +91,7 @@ export default function CatalogPage() {
       setRole((p?.role as string) ?? "");
     }
     const [{ data: cats }, { data: prods }] = await Promise.all([
-      supabase.from("product_categories").select("id,name,assigned_role").order("display_order"),
+      supabase.from("product_categories").select("id,name,assigned_role,shop_roles").order("display_order"),
       supabase
         .from("products")
         .select("id,name,unit,lead_time_hours,is_available,category_id,price,archived_at,unavailable_note")
@@ -107,12 +110,36 @@ export default function CatalogPage() {
     e.preventDefault();
     const { error } = await createClient()
       .from("product_categories")
-      .insert({ name: catName, assigned_role: catRole });
+      .insert({ name: catName, assigned_role: catRole, shop_roles: catShopRoles });
     if (error) return toast.error(error.message);
     toast.success(`Category “${catName}” added`);
     setCatName("");
+    setCatShopRoles([]);
     setCategoryOpen(false);
     await load();
+  }
+
+  // shop_roles decides which shops see a category's products and can order them —
+  // the name no longer matters, so renaming is safe. Unticking takes effect at once.
+  // The card's boxes stay disabled until the reload, so a second click can't write
+  // a list computed from the stale one.
+  async function toggleShopRole(c: Category, shopRole: string) {
+    const on = c.shop_roles.includes(shopRole);
+    const label = SHOP_ROLE_SHORT[shopRole];
+    if (on && !confirm(`Stop ${label} ordering from ${c.name}? Its products disappear from every ${label} ordering list.`)) return;
+    const next = on ? c.shop_roles.filter((r) => r !== shopRole) : [...c.shop_roles, shopRole];
+    setSavingShopRoles(c.id);
+    try {
+      const { error } = await createClient()
+        .from("product_categories")
+        .update({ shop_roles: next })
+        .eq("id", c.id);
+      if (error) return toast.error(error.message);
+      toast.success(on ? `${label} can no longer order ${c.name}` : `${label} can now order ${c.name}`);
+      await load();
+    } finally {
+      setSavingShopRoles(null);
+    }
   }
 
   async function addProduct(e: FormEvent) {
@@ -316,6 +343,29 @@ export default function CatalogPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label>Orderable by</Label>
+                  <div className="flex gap-4">
+                    {SHOP_ROLES.map((r) => (
+                      <label key={r} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-primary"
+                          checked={catShopRoles.includes(r)}
+                          onChange={(e) =>
+                            setCatShopRoles((cur) => (e.target.checked ? [...cur, r] : cur.filter((x) => x !== r)))
+                          }
+                        />
+                        {SHOP_ROLE_SHORT[r]}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {catShopRoles.length > 0
+                      ? "These shops see its products and can order them."
+                      : "No shop will see its products until you tick one."}
+                  </p>
+                </div>
                 <DialogFooter>
                   <Button type="submit">Add category</Button>
                 </DialogFooter>
@@ -402,6 +452,26 @@ export default function CatalogPage() {
                 <Badge variant="outline">{roleLabel(c.assigned_role)}</Badge>
               </div>
               <p className="text-xs text-muted-foreground">{prods.length} products</p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-2 text-sm">
+                <span className="text-xs text-muted-foreground">Orderable by:</span>
+                {isAdmin ? (
+                  SHOP_ROLES.map((r) => (
+                    <label key={r} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={c.shop_roles.includes(r)}
+                        disabled={savingShopRoles === c.id}
+                        onChange={() => void toggleShopRole(c, r)}
+                      />
+                      {SHOP_ROLE_SHORT[r]}
+                    </label>
+                  ))
+                ) : (
+                  <span>{c.shop_roles.map((r) => SHOP_ROLE_SHORT[r] ?? r).join(" / ")}</span>
+                )}
+                {c.shop_roles.length === 0 && <Badge variant="destructive">Hidden from every shop</Badge>}
+              </div>
             </CardHeader>
             <CardContent className="space-y-4 overflow-x-auto pt-4">
               <Table>

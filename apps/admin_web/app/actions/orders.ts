@@ -120,7 +120,7 @@ export async function submitOrder(payload: Payload) {
     .from("products")
     .select(`
       id, category_id, lead_time_hours, unit, name, is_available, archived_at,
-      product_categories ( assigned_role ),
+      product_categories ( shop_roles ),
       modifier_groups ( id, is_required, name )
     `)
     .in("id", productIds);
@@ -129,11 +129,6 @@ export async function submitOrder(payload: Payload) {
 
   const prodMap = new Map(dbProducts?.map(p => [p.id, p]) ?? []);
 
-  // F-2: NATIVE Backend RLS Security Bypass Fix
-  // Verify FOH manager only submits bread_baker assigned categories (Pastry/Retail), 
-  // and BOH manager only submits meat_specialist / bread_baker (Meat/Bread).
-  // Note: we can just check their specific allowed roles!
-  
   for (const item of payload.items) {
     const real = prodMap.get(item.product_id);
     if (!real) {
@@ -150,16 +145,11 @@ export async function submitOrder(payload: Payload) {
       return { error: "validation_failed", details: [`${real.name} is out of stock.`] };
     }
 
-    const assignedRole = (real.product_categories as { assigned_role?: string } | null)?.assigned_role;
-    if (profile.role === "foh_manager") {
-      if (assignedRole !== "bread_baker") {
-         // Pastry and Retail are assigned to bread_baker
-         return { error: "security_bypass", details: ["FOH managers can only order Pastry/Retail items."] };
-      }
-    } else if (profile.role === "kitchen_manager") {
-      if (assignedRole !== "bread_baker" && assignedRole !== "meat_specialist") {
-         return { error: "security_bypass", details: ["BOH managers can only order Bread/Meat items."] };
-      }
+    // A shop role orders exactly what it can see: the categories whose shop_roles
+    // list it (same rule as the products SELECT policy and submit_request, 0058).
+    const shopRoles = (real.product_categories as { shop_roles?: string[] | null } | null)?.shop_roles ?? [];
+    if (!shopRoles.includes(profile.role)) {
+      return { error: "security_bypass", details: [`${real.name} isn't on your ordering list.`] };
     }
 
     const requiredGroups = (real.modifier_groups || []).filter((g: { is_required?: boolean } | null) => g && g.is_required);
