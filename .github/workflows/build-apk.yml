@@ -1,18 +1,36 @@
 name: build-apk
 
-# Builds signed RELEASE APKs for the two Flutter apps and publishes them to the
-# `android-latest` GitHub release, which the /download page and the in-app
-# "Update required" screen link to. Supabase creds are passed at build time via
-# --dart-define from repo secrets SUPABASE_URL / SUPABASE_ANON_KEY.
+# Ships the two Flutter apps to Android through Shorebird code push:
+#   release — a full signed APK, registered with Shorebird and published to the
+#             `android-latest` GitHub release (the /download page and the in-app
+#             "Update required" screen link there). Phones must install it by hand.
+#   patch   — Dart-only changes pushed over the air to phones already on the latest
+#             release: downloaded on the next launch, applied on the one after.
+# `auto` (every push to main) picks release when something native may have changed
+# (dependencies, shorebird.yaml, Firebase config, launcher icon, this workflow),
+# patch otherwise, and skips an app nothing touched. Force either via dispatch.
 #
-# Signing uses ONE persistent key (secrets ANDROID_KEYSTORE_B64 / _PASSWORD /
-# ANDROID_KEY_ALIAS; backup + password with the owner). The old debug builds were
-# signed with a throwaway per-runner key, so Android refused to install a new APK
-# over an old one. Losing this key means every phone must uninstall + reinstall.
+# Supabase creds come from repo secrets via --dart-define. Signing uses ONE
+# persistent key (secrets ANDROID_KEYSTORE_B64 / _PASSWORD / ANDROID_KEY_ALIAS;
+# backup + password with the owner) — losing it means every phone must uninstall
+# and reinstall. SHOREBIRD_TOKEN is a Shorebird console API key (sb_api_…).
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "release (full APK), patch (over-the-air), or auto"
+        type: choice
+        options: [auto, release, patch]
+        default: auto
   push:
     branches: [main]
+    paths:
+      - "apps/shop_app/**"
+      - "apps/hub_app/**"
+      - "packages/**"
+      - "firebase/**"
+      - "assets/brand/**"
+      - ".github/workflows/build-apk.yml"
 
 permissions:
   contents: write   # publish APKs to the android-latest release
@@ -25,22 +43,54 @@ jobs:
       fail-fast: false
       matrix:
         app: [shop_app, hub_app]
+    env:
+      SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history: APP_CODE_VERSION is the commit count
+      - name: Decide release / patch / skip
+        id: mode
+        run: |
+          APP=apps/${{ matrix.app }}
+          MODE="${{ github.event.inputs.mode || 'auto' }}"
+          if [ "$MODE" = auto ]; then
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || ! CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" 2>/dev/null); then
+              MODE=release   # first push / unknown range: play safe
+            elif ! grep -qE "^($APP/|packages/|firebase/|assets/brand/|\.github/workflows/build-apk\.yml)" <<<"$CHANGED"; then
+              MODE=skip
+            elif grep -qE "^($APP/pubspec\.(yaml|lock)|$APP/shorebird\.yaml|packages/.*/pubspec\.yaml|firebase/|assets/brand/|\.github/workflows/build-apk\.yml)" <<<"$CHANGED"; then
+              MODE=release
+            else
+              MODE=patch
+            fi
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "### ${{ matrix.app }}: $MODE" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ matrix.app }} -> $MODE"
       - uses: actions/setup-java@v4
+        if: steps.mode.outputs.mode != 'skip'
         with:
           distribution: temurin
           java-version: "17"
-      - uses: subosito/flutter-action@v2
+      - uses: shorebirdtech/setup-shorebird@v1
+        if: steps.mode.outputs.mode != 'skip'
         with:
-          channel: stable
           cache: true
+      - name: Put Shorebird's Flutter on PATH
+        if: steps.mode.outputs.mode != 'skip'
+        run: |
+          # One toolchain for everything (templates, pub get, icons, build) so a
+          # patch sees the same generated native project as its release.
+          SB_ROOT=$(dirname "$(dirname "$(command -v shorebird)")")
+          echo "$SB_ROOT/bin/cache/flutter/$(cat "$SB_ROOT/bin/internal/flutter.version")/bin" >> "$GITHUB_PATH"
       - name: Generate platform files (ios scaffolded too so flutter_launcher_icons ios:true won't crash)
+        if: steps.mode.outputs.mode != 'skip'
         working-directory: apps/${{ matrix.app }}
         run: flutter create --platforms=ios,android --org com.hubsync .
       - name: Configure Firebase (Android)
+        if: steps.mode.outputs.mode != 'skip'
         working-directory: apps/${{ matrix.app }}
         run: |
           SHORT="${{ matrix.app }}"; SHORT="${SHORT%_app}"
@@ -55,6 +105,7 @@ jobs:
           echo "=== app build.gradle.kts plugins ==="; sed -n '/^plugins/,/}/p' android/app/build.gradle.kts
           echo "=== applicationId ==="; grep applicationId android/app/build.gradle.kts
       - name: Add notification permission (Android 13+)
+        if: steps.mode.outputs.mode != 'skip'
         working-directory: apps/${{ matrix.app }}
         run: |
           # POST_NOTIFICATIONS is a runtime permission on Android 13+; without it
@@ -63,6 +114,7 @@ jobs:
           sed -i '/<manifest/a\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' android/app/src/main/AndroidManifest.xml
           grep -n "POST_NOTIFICATIONS" android/app/src/main/AndroidManifest.xml
       - name: Add INTERNET permission (release builds)
+        if: steps.mode.outputs.mode != 'skip'
         working-directory: apps/${{ matrix.app }}
         run: |
           # flutter create only puts INTERNET in the debug/profile manifests; a release
@@ -70,6 +122,7 @@ jobs:
           sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
           grep -n "INTERNET" android/app/src/main/AndroidManifest.xml
       - name: Release signing (persistent key)
+        if: steps.mode.outputs.mode != 'skip'
         working-directory: apps/${{ matrix.app }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -82,6 +135,7 @@ jobs:
           grep -q 'getByName("release")' "$G" || { echo "release signingConfig not wired"; sed -n '/android {/,$p' "$G"; exit 1; }
           sed -n '/signingConfigs {/,/^    }/p' "$G"
       - name: Force compileSdk 36 (newer androidx deps require it)
+        if: steps.mode.outputs.mode != 'skip'
         working-directory: apps/${{ matrix.app }}
         run: |
           # The app module itself.
@@ -106,35 +160,55 @@ jobs:
           }
           EOF
       - name: Generate launcher icons (brand logo)
+        if: steps.mode.outputs.mode != 'skip'
         working-directory: apps/${{ matrix.app }}
         run: |
           flutter pub get
           dart run flutter_launcher_icons
-      - name: Build release APK
+      - name: Shorebird release (full APK)
+        if: steps.mode.outputs.mode == 'release'
         working-directory: apps/${{ matrix.app }}
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          flutter build apk --release \
+          shorebird release android --artifact apk --no-confirm -- \
             --build-number=${{ github.run_number }} \
             --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
             --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
             --dart-define=APP_CODE_VERSION=$(git rev-list --count HEAD) \
             --dart-define=APP_GIT_SHA=$(git rev-parse --short HEAD)
+      - name: Shorebird patch (over the air)
+        if: steps.mode.outputs.mode == 'patch'
+        working-directory: apps/${{ matrix.app }}
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          # Native/asset diffs are allowed because anything that really changes native
+          # code (dependencies, Firebase config, icon, this workflow) is routed to a
+          # release above; what's left is toolchain noise from the regenerated project.
+          shorebird patch android --release-version latest --no-confirm \
+            --allow-native-diffs --allow-asset-diffs -- \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }} \
+            --dart-define=APP_CODE_VERSION=$(git rev-list --count HEAD) \
+            --dart-define=APP_GIT_SHA=$(git rev-parse --short HEAD)
       - name: Verify the APK is signed with the release key
+        if: steps.mode.outputs.mode == 'release'
         run: |
           APK=apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
           SIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
           "$SIGNER" verify --print-certs "$APK" | tee "$RUNNER_TEMP/certs.txt"
           grep -q "CN=HubSync" "$RUNNER_TEMP/certs.txt" || { echo "APK not signed with the HubSync release key"; exit 1; }
       - uses: actions/upload-artifact@v4
+        if: steps.mode.outputs.mode == 'release'
         with:
           name: ${{ matrix.app }}-release-apk
           path: apps/${{ matrix.app }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
       - name: Publish to the android-latest release
-        if: github.ref == 'refs/heads/main'
+        if: steps.mode.outputs.mode == 'release' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
