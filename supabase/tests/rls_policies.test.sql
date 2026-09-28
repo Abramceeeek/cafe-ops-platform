@@ -397,4 +397,50 @@ DO $$ DECLARE n text; BEGIN
   IF n <> 'Lamb' THEN RAISE EXCEPTION 'rename rewrote history, got %', n; END IF;
 END $$;
 
+-- ── PLAIN DELETE ON PRODUCTS ARCHIVES (0055) ─────────────────────
+-- Older Hub builds send DELETE FROM products. With order history it must archive
+-- (no 23503); without it the row really goes.
+INSERT INTO products (id, category_id, name, unit, is_available) VALUES
+  ('dddddddd-dddd-dddd-dddd-ddddddddddd5','cccccccc-cccc-cccc-cccc-ccccccccccc1','Pork (never ordered)','kg',TRUE);
+SET request.jwt.claims = '{"sub":"22222222-2222-2222-2222-222222222201"}';
+SET ROLE authenticated;
+DO $$ DECLARE before int; c int; ok boolean; BEGIN
+  SELECT count(*) INTO before FROM order_items WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  DELETE FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';   -- Lamb, has history
+  SELECT archived_at IS NOT NULL AND NOT is_available INTO ok FROM products
+   WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF ok IS NOT TRUE THEN RAISE EXCEPTION 'DELETE of an ordered product should archive it, got %', ok; END IF;
+  SELECT count(*) INTO c FROM order_items WHERE product_id = 'dddddddd-dddd-dddd-dddd-ddddddddddd1';
+  IF c <> before THEN RAISE EXCEPTION 'DELETE-archive touched order history, % lines became %', before, c; END IF;
+
+  DELETE FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd5';   -- never ordered
+  SELECT count(*) INTO c FROM products WHERE id = 'dddddddd-dddd-dddd-dddd-ddddddddddd5';
+  IF c <> 0 THEN RAISE EXCEPTION 'DELETE of an unused product should remove it, saw %', c; END IF;
+END $$;
+RESET ROLE;
+
+-- ── PROFILE STATUS GUARD (0056) ──────────────────────────────────
+-- The last active admin can't be switched off, and every change is logged.
+DO $$ BEGIN
+  UPDATE profiles SET is_active = FALSE WHERE role = 'admin';
+  RAISE EXCEPTION 'deactivating the last active admin was allowed';
+EXCEPTION WHEN sqlstate 'P0001' THEN
+  IF SQLERRM <> 'last_active_admin' THEN RAISE; END IF;
+END $$;
+DO $$ DECLARE c int; BEGIN
+  UPDATE profiles SET is_active = FALSE WHERE id = '11111111-1111-1111-1111-111111111102';
+  UPDATE profiles SET is_active = TRUE  WHERE id = '11111111-1111-1111-1111-111111111102';
+  SELECT count(*) INTO c FROM profile_status_log WHERE profile_id = '11111111-1111-1111-1111-111111111102';
+  IF c <> 2 THEN RAISE EXCEPTION 'expected 2 profile_status_log rows for FOH B, got %', c; END IF;
+END $$;
+
+-- ── APP VERSION GATE (0057) ──────────────────────────────────────
+-- Readable before sign-in, so anon must see both rows.
+SET ROLE anon;
+DO $$ DECLARE c int; BEGIN
+  SELECT count(*) INTO c FROM app_versions;
+  IF c <> 2 THEN RAISE EXCEPTION 'anon should read 2 app_versions rows, saw %', c; END IF;
+END $$;
+RESET ROLE;
+
 SELECT 'rls_policies.test.sql: all scenarios passed' AS result;
